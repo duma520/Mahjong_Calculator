@@ -4,7 +4,7 @@
 ★ 先分清两件事（v2.6.0）：
     · **给其它程序调用的「API」是 `mahjong_core`，不是这个文件**：
         能 import 的： from mahjong_core import MahjongFanCalculator   # 或 score_hand()
-        不能 import 的： 国标麻将算番器.exe --hand "..." --json
+        不能 import 的： Mahjong_Calculator.exe --hand "..." --json
                         （开发时用 python mahjong_core.py --hand "..." --json）
         这两种方式都**不需要 HTTP、不需要端口、不需要先启动谁**。
     · 本文件只为**浏览器**服务：内联一份单文件 Web 客户端（手机/平板打开就能算番），
@@ -12,7 +12,7 @@
 
 单独运行（起 Web 版服务）：
     python mahjong_api.py [--host 127.0.0.1] [--port 8718] [--token 口令] [--anon web,info] [--verbose]
-也可以由主程序内嵌启动：mahjong_gui.py →「工具 → 启动 Web 版」
+也可以由主程序内嵌启动：Mahjong_Calculator.py →「工具 → 启动 Web 版」
 （两者用同一份代码，行为一致）。
 
 ★ 默认只监听 127.0.0.1（仅本机可访问）。若要对局域网/手机开放，
@@ -971,6 +971,12 @@ def _tile_image_bytes(name: str) -> Optional[bytes]:
     return None
 
 
+# ★ v2.7.4：客户端（手机/平板浏览器）「提前断开」时会抛这几个异常 —— 属于正常现象，
+#   不当错误处理（见下方 Handler.handle_one_request / QuietHTTPServer.handle_error）
+CLIENT_GONE_ERRORS = (ConnectionResetError, ConnectionAbortedError,
+                      BrokenPipeError, TimeoutError)
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MahjongApi/1.0"
     protocol_version = "HTTP/1.1"
@@ -982,6 +988,17 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):        # noqa: A003
         if getattr(self.server, "verbose", False):
             sys.stderr.write("[api] %s - %s\n" % (self.address_string(), fmt % args))
+
+    # ★ v2.7.4：手机 / 平板浏览器随时会「提前断开」—— 刷新页面、切到后台、关掉标签页，
+    #   都会让 TCP 连接直接被切掉（RST）。标准库此时会在 rfile.readline() 里抛
+    #   ConnectionResetError，并在控制台打一整屏 traceback：
+    #       Exception occurred during processing of request from ('192.168.x.x', 52542)
+    #   那是**噪声，不是程序出错**（不影响服务、不影响算番）；这里直接忽略。
+    def handle_one_request(self) -> None:      # noqa: N802
+        try:
+            super().handle_one_request()
+        except CLIENT_GONE_ERRORS:
+            self.close_connection = True
 
     def _cors(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -1180,6 +1197,26 @@ class Handler(BaseHTTPRequestHandler):
             self._fail("内部错误：%r" % (exc,), 500)
 
 
+class QuietHTTPServer(ThreadingHTTPServer):
+    """★ v2.7.4：把「客户端提前断开」类异常的 traceback 静音
+
+    `socketserver` 默认的 `handle_error()` 会把**任何**异常连 traceback 一起打到控制台，
+    而手机上最常见的就是刷新/关闭页面导致的 ConnectionResetError（一大屏
+    「Exception occurred during processing of request from ('192.168.x.x', 52542)」）。
+    那类异常对服务毫无影响，属于噪声；**其余异常照旧完整打印**（不掩盖真问题）。
+    开了 verbose 时会打一行简短提示，便于排查「连接数异常」这类情况。
+    """
+
+    def handle_error(self, request, client_address) -> None:     # noqa: ARG002
+        exc = sys.exc_info()[1]
+        if isinstance(exc, CLIENT_GONE_ERRORS):
+            if getattr(self, "verbose", False):
+                ip = client_address[0] if client_address else "?"
+                sys.stderr.write("[api] %s 提前断开连接（正常现象，已忽略）\n" % ip)
+            return
+        super().handle_error(request, client_address)
+
+
 class ApiServer:
     """本地 API 服务（可在主程序里内嵌启动，也可单独运行）"""
 
@@ -1223,7 +1260,7 @@ class ApiServer:
                        {"engine": self.engine, "token": self.token,
                         "anon": self.anon})
         try:
-            self._httpd = ThreadingHTTPServer((self.host, self.port), handler)
+            self._httpd = QuietHTTPServer((self.host, self.port), handler)
         except OSError as exc:
             raise ApiError("端口 %d 无法监听（%s）" % (self.port, exc))
         self._httpd.daemon_threads = True

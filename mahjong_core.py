@@ -1687,7 +1687,7 @@ class MahjongFanCalculator:
 #   不需要先启动谁**：两种最直接的方式——
 #     ① 能 import 的：`from mahjong_core import MahjongFanCalculator`（或便捷函数 `score_hand()`）
 #     ② 不能 import 的：把牌当参数丢给 exe/py（subprocess 调一次即可）——
-#         国标麻将算番器.exe --hand "1233455677899m" --win 9m --json
+#         Mahjong_Calculator.exe --hand "1233455677899m" --win 9m --json
 #         python mahjong_core.py --hand "..." --json
 #   默认输出 JSON，`--text` 输出人话；算不出和牌 → 退出码 1（JSON 里 ok=false 带 message）。
 
