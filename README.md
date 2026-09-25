@@ -1,3 +1,22 @@
+# 国标麻将算番器 · 截图 v2.7.2
+
+<img width="682" height="972" alt="image" src="https://github.com/user-attachments/assets/c586c757-7de2-43d0-88dd-e6333bc4eec5" />
+
+<img width="682" height="972" alt="image" src="https://github.com/user-attachments/assets/fbf44722-124c-499f-99ef-d56e58c6545c" />
+
+<img width="682" height="972" alt="image" src="https://github.com/user-attachments/assets/37193678-b15a-45b5-8e93-96312ad6b8b8" />
+
+<img width="1072" height="994" alt="image" src="https://github.com/user-attachments/assets/e01f8bb6-b541-401f-8a80-9c9f865db746" />
+
+<img width="1257" height="948" alt="image" src="https://github.com/user-attachments/assets/c1e6c5f2-e80f-4d3e-a5fa-66163009d51b" />
+
+<img width="1257" height="948" alt="image" src="https://github.com/user-attachments/assets/adfca06e-4e4b-4c2e-be15-abf2c76b4cfb" />
+
+<img width="1257" height="948" alt="image" src="https://github.com/user-attachments/assets/f4bb3cdd-0790-4e5d-97f7-697a424d2020" />
+
+
+---
+
 # 国标麻将算番器 · 完全使用手册
 
 **从零基础到高级应用的全方位指南**
