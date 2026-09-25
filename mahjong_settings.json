@@ -1,0 +1,27 @@
+{
+  "geometry": [
+    178,
+    45,
+    680,
+    960
+  ],
+  "geo_ver": 2,
+  "window_maximized": false,
+  "wind_round": "东",
+  "wind_seat": "东",
+  "flowers": 0,
+  "flowers_picked": [],
+  "tsumo": false,
+  "last_tile": false,
+  "special_a": false,
+  "special_b": false,
+  "mode": "stand",
+  "page": 0,
+  "api_port": 8080,
+  "api_auto_start": true,
+  "api_lan": true,
+  "api_token": "",
+  "api_anon": [
+    "web"
+  ]
+}
