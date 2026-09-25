@@ -1,0 +1,501 @@
+{
+    "88番": [
+        {
+            "name": "大四喜",
+            "fan": 88,
+            "exclude": ["小四喜", "三风刻", "碰碰和", "圈风刻", "门风刻", "幺九刻"],
+            "condition": "由4副风刻（杠）组成的和牌"
+        },
+        {
+            "name": "大三元",
+            "fan": 88,
+            "exclude": ["小三元", "箭刻"],
+            "condition": "和牌中，有中发白3副刻子"
+        },
+        {
+            "name": "绿一色",
+            "fan": 88,
+            "exclude": ["混一色"],
+            "condition": "由23468条及发字组成的牌型"
+        },
+        {
+            "name": "九莲宝灯",
+            "fan": 88,
+            "exclude": ["清一色", "门前清", "幺九刻"],
+            "condition": "1112345678999特定牌型"
+        },
+        {
+            "name": "四杠",
+            "fan": 88,
+            "exclude": ["三杠", "双暗杠", "双明杠"],
+            "condition": "4个杠"
+        },
+        {
+            "name": "连七对",
+            "fan": 88,
+            "exclude": ["七对", "清一色", "门前清"],
+            "condition": "同花色序数相连的7对"
+        },
+        {
+            "name": "十三幺",
+            "fan": 88,
+            "exclude": ["五门齐", "全带幺", "门前清"],
+            "condition": "3种幺九牌+7种字牌各1张"
+        }
+    ],
+    "64番": [
+        {
+            "name": "清幺九",
+            "fan": 64,
+            "exclude": ["碰碰和", "混幺九", "幺九刻"],
+            "condition": "全部由序数牌一、九组成"
+        },
+        {
+            "name": "小四喜",
+            "fan": 64,
+            "exclude": ["大四喜", "三风刻"],
+            "condition": "3副风刻+风牌将"
+        },
+        {
+            "name": "小三元",
+            "fan": 64,
+            "exclude": ["大三元", "箭刻"],
+            "condition": "2副箭刻+箭牌将"
+        },
+        {
+            "name": "字一色",
+            "fan": 64,
+            "exclude": ["混幺九", "碰碰和"],
+            "condition": "全部由字牌组成"
+        },
+        {
+            "name": "四暗刻",
+            "fan": 64,
+            "exclude": ["碰碰和"],
+            "condition": "4个暗刻（未碰牌）"
+        },
+        {
+            "name": "一色双龙会",
+            "fan": 64,
+            "exclude": ["平和", "清一色"],
+            "condition": "两个老少副+5作将"
+        }
+    ],
+    "48番": [
+        {
+            "name": "一色四同顺",
+            "fan": 48,
+            "exclude": ["一色三同顺", "一般高"],
+            "condition": "同花色4个相同顺子"
+        },
+        {
+            "name": "一色四节高",
+            "fan": 48,
+            "exclude": ["一色三节高", "碰碰和"],
+            "condition": "同花色4个递增刻子"
+        }
+    ],
+    "32番": [
+        {
+            "name": "一色四步高",
+            "fan": 32,
+            "exclude": ["一色三步高"],
+            "condition": "同花色4个递增顺子"
+        },
+        {
+            "name": "三杠",
+            "fan": 32,
+            "exclude": ["双明杠", "双暗杠"],
+            "condition": "3个杠"
+        },
+        {
+            "name": "混幺九",
+            "fan": 32,
+            "exclude": ["清幺九", "碰碰和"],
+            "condition": "由字牌和幺九牌组成"
+        }
+    ],
+    "24番": [
+        {
+            "name": "七对",
+            "fan": 24,
+            "exclude": ["门前清", "单钓将"],
+            "condition": "7个对子"
+        },
+        {
+            "name": "七星不靠",
+            "fan": 24,
+            "exclude": ["五门齐", "全不靠"],
+            "condition": "7种字牌各1张+三种花色147/258/369"
+        },
+        {
+            "name": "全双刻",
+            "fan": 24,
+            "exclude": ["碰碰和", "断幺"],
+            "condition": "由2468序数牌刻子组成"
+        },
+        {
+            "name": "清一色",
+            "fan": 24,
+            "exclude": [],
+            "condition": "单一花色序数牌（不含字牌）"
+        },
+        {
+            "name": "一色三同顺",
+            "fan": 24,
+            "exclude": ["一色三节高"],
+            "condition": "同花色3个相同顺子"
+        },
+        {
+            "name": "一色三节高",
+            "fan": 24,
+            "exclude": ["一色三同顺"],
+            "condition": "同花色3个递增刻子"
+        },
+        {
+            "name": "全大",
+            "fan": 24,
+            "exclude": [],
+            "condition": "全部由789组成（不含字牌）"
+        },
+        {
+            "name": "全中",
+            "fan": 24,
+            "exclude": [],
+            "condition": "全部由456组成（不含字牌）"
+        },
+        {
+            "name": "全小",
+            "fan": 24,
+            "exclude": [],
+            "condition": "全部由123组成（不含字牌）"
+        }
+    ],
+    "16番": [
+        {
+            "name": "清龙",
+            "fan": 16,
+            "exclude": ["连六"],
+            "condition": "同花色1-9相连"
+        },
+        {
+            "name": "三色双龙会",
+            "fan": 16,
+            "exclude": ["喜相逢","平和","无字"],
+            "condition": "两种花色老少副+第三种花色5作将"
+        },
+        {
+            "name": "一色三步高",
+            "fan": 16,
+            "condition": "同花色3个递增顺子"
+        },
+        {
+            "name": "全带五",
+            "fan": 16,
+            "exclude": ["断幺"],
+            "condition": "每副牌都带5"
+        },
+        {
+            "name": "三同刻",
+            "fan": 16,
+            "exclude": ["双同刻"],
+            "condition": "3个相同序数刻子"
+        },
+        {
+            "name": "三暗刻",
+            "fan": 16,
+            "exclude": ["双暗刻"],
+            "condition": "3个暗刻"
+        }
+    ],
+    "12番": [
+        {
+            "name": "全不靠",
+            "fan": 12,
+            "exclude": ["五门齐"],
+            "condition": "三种花色147/258/369单张+7种字牌"
+        },
+        {
+            "name": "组合龙",
+            "fan": 12,
+            "condition": "三种花色147/258/369"
+        },
+        {
+            "name": "大于五",
+            "fan": 12,
+            "exclude": ["无字"],
+            "condition": "全部由6-9组成"
+        },
+        {
+            "name": "小于五",
+            "fan": 12,
+            "exclude": ["无字"],
+            "condition": "全部由1-4组成"
+        },
+        {
+            "name": "三风刻",
+            "fan": 12,
+            "condition": "3个风刻"
+        }
+    ],
+    "8番": [
+        {
+            "name": "天和",
+            "fan": 8,
+            "exclude": ["自摸"],
+            "condition": "庄家起手和牌"
+        },
+        {
+            "name": "花龙",
+            "fan": 8,
+            "exclude": ["连六","老少副"],
+            "condition": "三种花色123/456/789组合"
+        },
+        {
+            "name": "推不倒",
+            "fan": 8,
+            "exclude": ["缺一门"],
+            "condition": "由245689条筒+白板组成"
+        },
+        {
+            "name": "三色三同顺",
+            "fan": 8,
+            "exclude": ["喜相逢"],
+            "condition": "三色相同数字顺子"
+        },
+        {
+            "name": "三色三节高",
+            "fan": 8,
+            "condition": "三色递增数字刻子"
+        },
+        {
+            "name": "无番和",
+            "fan": 8,
+            "exclude": ["自摸","边张","坎张","单钓将"],
+            "condition": "没有任何可计番种"
+        },
+        {
+            "name": "妙手回春",
+            "fan": 8,
+            "exclude": ["自摸"],
+            "condition": "自摸牌墙最后一张"
+        },
+        {
+            "name": "海底捞月",
+            "fan": 8,
+            "exclude": ["自摸"],
+            "condition": "和最后一张牌"
+        },
+        {
+            "name": "杠上开花",
+            "fan": 8,
+            "exclude": ["自摸"],
+            "condition": "开杠后和牌"
+        },
+        {
+            "name": "抢杠和",
+            "fan": 8,
+            "exclude": ["和绝张"],
+            "condition": "和别人补杠牌"
+        },
+        {
+            "name": "地和",
+            "fan": 8,
+            "exclude": ["自摸"],
+            "condition": "闲家起手和牌"
+        },
+        {
+            "name": "人和",
+            "fan": 8,
+            "exclude": ["自摸"],
+            "condition": "闲家起手第一巡和牌"
+        }
+    ],
+    "6番": [
+        {
+            "name": "碰碰和",
+            "fan": 6,
+            "condition": "4副刻子"
+        },
+        {
+            "name": "混一色",
+            "fan": 6,
+            "exclude": ["缺一门"],
+            "condition": "单一花色+字牌"
+        },
+        {
+            "name": "三色三步高",
+            "fan": 6,
+            "condition": "三色递增顺子"
+        },
+        {
+            "name": "五门齐",
+            "fan": 6,
+            "condition": "包含万、条、筒、风、箭五类"
+        },
+        {
+            "name": "全求人",
+            "fan": 6,
+            "exclude": ["单钓将"],
+            "condition": "全部吃碰+单钓"
+        },
+        {
+            "name": "双暗杠",
+            "fan": 6,
+            "exclude": ["暗杠"],
+            "condition": "2个暗杠"
+        },
+        {
+            "name": "双箭刻",
+            "fan": 6,
+            "exclude": ["箭刻"],
+            "condition": "2副箭刻"
+        }
+    ],
+    "4番": [
+        {
+            "name": "全带幺",
+            "fan": 4,
+            "condition": "每副牌带幺九"
+        },
+        {
+            "name": "不求人",
+            "fan": 4,
+            "exclude": ["门前清"],
+            "condition": "无吃碰且自摸"
+        },
+        {
+            "name": "双明杠",
+            "fan": 4,
+            "exclude": ["明杠"],
+            "condition": "2个明杠"
+        },
+        {
+            "name": "和绝张",
+            "fan": 4,
+            "condition": "和第四张牌"
+        }
+    ],
+    "2番": [
+        {
+            "name": "箭刻",
+            "fan": 2,
+            "condition": "中发白刻子"
+        },
+        {
+            "name": "圈风刻",
+            "fan": 2,
+            "exclude": ["幺九刻"],
+            "condition": "与圈风相同的刻子"
+        },
+        {
+            "name": "门风刻",
+            "fan": 2,
+            "exclude": ["幺九刻"],
+            "condition": "与门风相同的刻子"
+        },
+        {
+            "name": "门前清",
+            "fan": 2,
+            "condition": "没有吃碰明杠"
+        },
+        {
+            "name": "平和",
+            "fan": 2,
+            "exclude": ["无字"],
+            "condition": "4顺+序数将"
+        },
+        {
+            "name": "四归一",
+            "fan": 2,
+            "condition": "4张相同牌未杠"
+        },
+        {
+            "name": "双同刻",
+            "fan": 2,
+            "condition": "2个相同序数刻子"
+        },
+        {
+            "name": "双暗刻",
+            "fan": 2,
+            "condition": "2个暗刻"
+        },
+        {
+            "name": "暗杠",
+            "fan": 2,
+            "condition": "暗杠"
+        },
+        {
+            "name": "断幺",
+            "fan": 2,
+            "condition": "没有幺九牌"
+        }
+    ],
+    "1番": [
+        {
+            "name": "一般高",
+            "fan": 1,
+            "condition": "相同顺子"
+        },
+        {
+            "name": "喜相逢",
+            "fan": 1,
+            "condition": "不同花色相同顺子"
+        },
+        {
+            "name": "连六",
+            "fan": 1,
+            "condition": "同花色6张连牌"
+        },
+        {
+            "name": "老少副",
+            "fan": 1,
+            "condition": "123+789顺子"
+        },
+        {
+            "name": "幺九刻",
+            "fan": 1,
+            "condition": "幺九牌刻子"
+        },
+        {
+            "name": "明杠",
+            "fan": 1,
+            "condition": "明杠"
+        },
+        {
+            "name": "缺一门",
+            "fan": 1,
+            "condition": "缺少一种花色"
+        },
+        {
+            "name": "无字",
+            "fan": 1,
+            "condition": "没有字牌"
+        },
+        {
+            "name": "边张",
+            "fan": 1,
+            "condition": "和边张"
+        },
+        {
+            "name": "坎张",
+            "fan": 1,
+            "condition": "和坎张"
+        },
+        {
+            "name": "单钓将",
+            "fan": 1,
+            "condition": "单钓将牌"
+        },
+        {
+            "name": "自摸",
+            "fan": 1,
+            "condition": "自摸和牌"
+        },
+        {
+            "name": "花牌",
+            "fan": 1,
+            "condition": "每张花牌+1番"
+        }
+    ]
+}
