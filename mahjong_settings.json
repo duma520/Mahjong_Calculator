@@ -1,9 +1,9 @@
 {
   "geometry": [
-    178,
-    45,
+    52,
+    115,
     680,
-    960
+    926
   ],
   "geo_ver": 2,
   "window_maximized": false,
@@ -23,5 +23,6 @@
   "api_token": "",
   "api_anon": [
     "web"
-  ]
+  ],
+  "api_show": []
 }

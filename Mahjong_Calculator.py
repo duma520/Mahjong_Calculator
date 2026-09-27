@@ -116,7 +116,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QStackedWidget, QTextBrowser, QToolButton, QVBoxLayout, QWidget,
 )
 
-__version__ = "2.7.4"
+__version__ = "2.7.9"
 APP_NAME = "国标麻将算番器"                 # 中文名（界面显示，保持不变）
 APP_NAME_EN = "Mahjong_Calculator"        # ★ v2.7.3 英文名：文件名 / exe / 打包目录统一用它
 SETTINGS_FILE = "mahjong_settings.json"
@@ -257,10 +257,16 @@ except Exception as _exc:       # noqa: BLE001
 #   这里的服务只为「手机/平板浏览器算番」的 Web 页面存在。
 try:
     from mahjong_api import (ApiError as ApiError_, ApiServer as ApiServer_,
-                            lan_ip as lan_ip_)
+                            lan_ip as lan_ip_,
+                            WEB_SHOW_ITEMS as WEB_SHOW_ITEMS_,
+                            WEB_SHOW_KEYS as WEB_SHOW_KEYS_,
+                            WEB_SHOW_DEFAULT as WEB_SHOW_DEFAULT_)
     API_IMPORT_ERROR = None
 except Exception as _exc:       # noqa: BLE001
     ApiServer_ = None                # type: ignore[assignment]
+    WEB_SHOW_ITEMS_ = ()             # type: ignore[assignment]
+    WEB_SHOW_KEYS_ = []              # type: ignore[assignment]
+    WEB_SHOW_DEFAULT_ = ()           # type: ignore[assignment]
 
     class ApiError_(Exception):      # type: ignore[no-redef]
         message = ""
@@ -688,6 +694,53 @@ class AnonAccessDialog(QDialog):
         return [k for k in ANON_KEYS if self.boxes[k].isChecked()]
 
 
+class WebDisplayDialog(QDialog):
+    """Web 版显示设置（v2.7.5）——手机/平板页面上的「工具按钮」要不要显示。
+
+    目前两项：接口自测页（/debug）、换口令。**默认两个都不显示**（对只想算番的人是干扰）。
+    只负责收集选择；实际重启服务由 `MahjongFanWindow._api_set_show` 做。
+    """
+
+    def __init__(self, current: List[str], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Web 版显示设置")
+        self.setWindowIcon(app_icon())
+        self.setMinimumWidth(460)
+        lay = QVBoxLayout(self)
+        tip = QLabel(
+            "手机/平板打开 Web 版页面时，模式行里那几个按钮默认只留「重置」和「布局」。\n"
+            "下面两项是给调试/运维用的，勾上才会显示在页面上（默认都不显示）。")
+        tip.setWordWrap(True)
+        lay.addWidget(tip)
+        self.boxes: Dict[str, QCheckBox] = {}
+        items = WEB_SHOW_ITEMS_ or ()
+        if not items:
+            warn = QLabel("⚠ 缺少 mahjong_api.py（拿不到可选项清单）")
+            warn.setStyleSheet("color:#b45309;")
+            lay.addWidget(warn)
+        for key, label, detail in items:
+            cb = QCheckBox(label)
+            cb.setChecked(key in (current or []))
+            cb.setToolTip(detail)
+            self.boxes[key] = cb
+            lay.addWidget(cb)
+            sub = QLabel("　" + detail)
+            sub.setStyleSheet("color:#6b7280; font-size:11px;")
+            sub.setWordWrap(True)
+            lay.addWidget(sub)
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.button(QDialogButtonBox.Ok).setText("确定")
+        btns.button(QDialogButtonBox.Cancel).setText("取消")
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        lay.addWidget(btns)
+
+    def selected(self) -> List[str]:
+        """按 WEB_SHOW_KEYS_ 顺序返回勾中的键"""
+        return [k for k in WEB_SHOW_KEYS_ if self.boxes.get(k) is not None
+                and self.boxes[k].isChecked()]
+
+
 # ------------------------------------------------------------------ 主窗口
 
 class MahjongFanWindow(QMainWindow):
@@ -721,6 +774,11 @@ class MahjongFanWindow(QMainWindow):
         self.api_anon: List[str] = ([k for k in ANON_KEYS if k in _anon]
                                    if isinstance(_anon, (list, tuple))
                                    else list(ANON_DEFAULT))
+        # ★ v2.7.5：Web 页面上的「接口自测页 / 换口令」两个按钮要不要显示 —— 默认都不显示
+        _show = self._global_settings.get("api_show")
+        self.web_show: List[str] = ([k for k in WEB_SHOW_KEYS_ if k in _show]
+                                   if isinstance(_show, (list, tuple))
+                                   else list(WEB_SHOW_DEFAULT_))
 
         self._build_ui()
         self._build_menu()
@@ -1179,6 +1237,12 @@ class MahjongFanWindow(QMainWindow):
         act_api_anon.triggered.connect(self._api_set_anon)
         self.act_api_anon = act_api_anon
         m_tool.addAction(act_api_anon)
+        act_api_show = QAction("Web 版显示设置(&S)…", self)
+        act_api_show.setToolTip("手机/平板页面上的「接口自测页」「换口令」按钮要不要显示"
+                                "（默认都不显示）")
+        act_api_show.triggered.connect(self._api_set_show)
+        self.act_api_show = act_api_show
+        m_tool.addAction(act_api_show)
         act_api_info = QAction("Web 版地址与用法(&I)…", self)
         act_api_info.triggered.connect(self._api_show_info)
         m_tool.addAction(act_api_info)
@@ -1251,7 +1315,7 @@ class MahjongFanWindow(QMainWindow):
                                     "缺少 mahjong_api.py 或导入失败：\n%s" % API_IMPORT_ERROR)
             return False
         srv = ApiServer_(self._api_host(), self.api_port, self.api_token,
-                         anon=tuple(self.api_anon))
+                         anon=tuple(self.api_anon), show=tuple(self.web_show))
         try:
             url = srv.start()
         except Exception as exc:       # noqa: BLE001
@@ -1402,6 +1466,32 @@ class MahjongFanWindow(QMainWindow):
             self._api_start(silent=True)
         self.statusBar().showMessage("免口令访问已更新：%s" % self._anon_text(), 6000)
 
+    def _api_set_show(self) -> None:
+        """Web 版显示设置（v2.7.5）：页面上的「接口自测页」「换口令」按钮要不要显示：
+        默认都不显示；改完存盘 + 重启服务（页面是按请求现生成的，重启后手机刷新即可看到）。
+        """
+        dlg = WebDisplayDialog(list(self.web_show), self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        picked = dlg.selected()
+        if picked == self.web_show:
+            return
+        self.web_show = picked
+        was_running = self._api_running()
+        if was_running:
+            self._api_stop(silent=True, remember=False)
+        self._autosave_settings()
+        if was_running:
+            self._api_start(silent=True)
+        self.statusBar().showMessage("Web 版显示已更新：%s" % self._web_show_text(), 6000)
+
+    def _web_show_text(self) -> str:
+        """把当前「Web 页面显示」设置说成人话（状态栏/提示用）"""
+        if not self.web_show:
+            return "页面只显示「重置 / 布局」（默认，两个按钮都不显示）"
+        names = {k: label.split("（")[0] for k, label, _ in (WEB_SHOW_ITEMS_ or ())}
+        return "页面显示：" + "、".join(names.get(k, k) for k in self.web_show)
+
     def _api_set_port(self) -> None:
         port, ok = QInputDialog.getInt(self, "Web 版端口设置",
                                        "监听端口（1024~65535）：", self.api_port,
@@ -1441,6 +1531,7 @@ class MahjongFanWindow(QMainWindow):
             "api_lan": bool(self.api_lan),
             "api_token": str(self.api_token or ""),
             "api_anon": list(self.api_anon),
+            "api_show": list(self.web_show),
         }
 
     def _apply_settings(self, s: dict) -> None:
@@ -1505,6 +1596,12 @@ class MahjongFanWindow(QMainWindow):
             self.api_anon = [k for k in ANON_KEYS if k in picks_anon]
         else:
             self.api_anon = list(ANON_DEFAULT)
+        # ★ v2.7.5：Web 页面显示项（老设置没这个键 → 回默认「都不显示」）
+        picks_show = s.get("api_show")
+        if isinstance(picks_show, (list, tuple)):
+            self.web_show = [k for k in WEB_SHOW_KEYS_ if k in picks_show]
+        else:
+            self.web_show = list(WEB_SHOW_DEFAULT_)
         if getattr(self, "act_api_lan", None) is not None:
             self.act_api_lan.setChecked(self.api_lan)
 

@@ -1,5 +1,5 @@
 @echo off
-rem Dev run: cd to script dir then launch the main program (mahjong_gui.py)
+rem Dev run: cd to script dir then launch the main program (Mahjong_Calculator.py)
 cd /d "%~dp0"
 cls
-python mahjong_gui.py
+python Mahjong_Calculator.py

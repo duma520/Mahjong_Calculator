@@ -329,6 +329,16 @@ ANON_GROUPS = {
 # 默认值：与 v2.4.x 行为完全一致（Web 页面/牌面图/自测页免口令，`/api/*` 要口令）
 ANON_DEFAULT = ("web", "debug")
 
+# ★ v2.7.5：Web 页面模式行里的两个「工具按钮」——默认**都不显示**
+#   （对只想算番的人来说它们是干扰：一个是开发者自测页，一个是换口令）。
+#   想用就在桌面端「工具 → Web 版显示设置…」里勾上（或命令行 --show debug,token）。
+WEB_SHOW_ITEMS = (
+    ("debug", "接口自测页", "页面上的「接口自测页」按钮（打开 /debug 表单页，逐项试接口）"),
+    ("token", "换口令", "页面上的「换口令」按钮（换成新口令后记在浏览器里）"),
+)
+WEB_SHOW_KEYS = [k for k, _, _ in WEB_SHOW_ITEMS]
+WEB_SHOW_DEFAULT: Tuple[str, ...] = ()      # 默认：两个都不显示
+
 WEB_CLIENT = r"""<!doctype html>
 <html lang="zh-CN"><head>
 <meta charset="utf-8">
@@ -343,12 +353,16 @@ WEB_CLIENT = r"""<!doctype html>
 :root{--blue:#2f7ff0;--bg:#f4f6fa;--card:#fff;--line:#dde3ec;--grey:#6b7684;--red:#e74c3c;
  /* ★ v2.7.0 牌尺寸全部改成变量：这组默认值 = 「经典（固定尺寸）」布局，
     与老版本逐个像素一致（38/52、34/46、28/38、间距 3/4）；
-    「自适应」布局时由 JS 按屏幕大小改写这些变量（body.auto）——
-    两套布局共存，切换不会把旧布局改坏 */
+    「自适应」及更大的 3 档（大/更大/最大）由 JS 按屏幕大小改写这些变量
+    （body.auto）——大小档共存，切回经典不会把老布局改坏 */
  --tw:38px;--th:52px;--pw:34px;--ph:46px;
  --gw:4px;--pgap:3px;
  --fw:34px;--fh:46px;--fwi:28px;--fhi:38px;
- --ww:28px;--wh:38px}
+ --ww:28px;--wh:38px;
+ /* ★ v2.7.6 按钮尺寸档位（客户端模式行「按钮：…」循环切换，共 5 档）：
+    这组默认值 = 升级前的样子（字号 15px、内边距 7/11px）——
+    选「默认（3/5）」这一档时 JS 会把内联变量清掉、回落到这里 ⇒ 与老版本逐像素一致 */
+ --btn-fs:15px;--btn-pad-y:7px;--btn-pad-x:11px}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;background:var(--bg);color:#1f2937;
  font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;font-size:15px}
@@ -381,11 +395,14 @@ main{padding:10px 10px 120px;max-width:760px;margin:0 auto}
 .wait span{font-size:11px;color:var(--grey)}
 .wait span.low{color:var(--red)}
 .btns{display:flex;gap:6px;flex-wrap:wrap}
-button{font:inherit;border:1px solid var(--line);background:#fff;border-radius:8px;
- padding:7px 11px;cursor:pointer}
+button{font:inherit;font-size:var(--btn-fs);border:1px solid var(--line);background:#fff;
+ border-radius:8px;padding:var(--btn-pad-y) var(--btn-pad-x);cursor:pointer}
 button.on{background:var(--blue);border-color:var(--blue);color:#fff}
 button.warn{background:#fff3e6;border-color:#f0c08a}
 button:active{transform:translateY(1px)}
+/* ★ v2.7.9：页面不足一屏时「跳转」按钮置灰；被跳转到的区块闪一下边框作为反馈 */
+button:disabled{opacity:.45;cursor:default}
+.card.flash{outline:2px solid var(--blue);outline-offset:2px}
 .mod{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
 .pool{margin:0 0 8px}
 .pool .line{display:flex;gap:3px;flex-wrap:wrap}
@@ -426,7 +443,7 @@ footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px sol
 </header>
 <main>
   <!-- ① 牌选择区（与桌面版一致：索 / 筒 / 万 / 字牌 四行） -->
-  <div class="card">
+  <div class="card" id="c_pool">
     <h2>牌选择区（点一下加一张；点牌上红色数字 −1）</h2>
     <div class="pool" id="pool"></div>
   </div>
@@ -436,9 +453,10 @@ footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px sol
     <div class="mod" id="modes"></div>
     <div class="btns" style="margin-top:8px">
       <button class="warn" onclick="resetAll()">重置</button>
-      <button id="lybtn" onclick="toggleLayout()">布局：经典</button>
-      <button onclick="window.open('/debug','_blank')">接口自测页</button>
-      <button onclick="setToken()">换口令</button>
+      <button id="lybtn" onclick="cycleLayout()">布局：经典（1/5）</button>
+      <button id="szbtn" onclick="cycleBtnSize()">按钮：最小（1/5）</button>
+      <button id="btn_debug" style="__SHOW_DEBUG__" onclick="window.open('/debug','_blank')">接口自测页</button>
+      <button id="btn_token" style="__SHOW_TOKEN__" onclick="setToken()">换口令</button>
     </div>
   </div>
 
@@ -469,7 +487,7 @@ footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px sol
   </div>
 
   <!-- ⑥ 算番结果 -->
-  <div class="card">
+  <div class="card" id="c_res">
     <h2>算番结果 <span id="pat" class="tip"></span></h2>
     <div class="tot" id="tot">—</div>
     <div class="tip" id="msg"></div>
@@ -481,8 +499,8 @@ footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px sol
   </div>
 </main>
 <footer>
-  <button onclick="scrollTo({top:0,behavior:'smooth'})">↑ 牌池</button>
-  <button onclick="scrollTo({top:document.body.scrollHeight,behavior:'smooth'})">↓ 结果</button>
+  <button id="jump_pool" onclick="gotoBlock('c_pool')">↑ 牌池</button>
+  <button id="jump_res" onclick="gotoBlock('c_res')">↓ 结果</button>
 </footer>
 <div class="dlg" id="dlg"><div class="box">
   <h3 style="margin:0 0 8px">需要访问口令</h3>
@@ -529,31 +547,90 @@ async function api(path,body){
   return j;
 }
 function el(id){return document.getElementById(id);}
-/* ---------- 布局（★ v2.7.0：经典 / 自适应两套共存，默认还是经典） ----------
-   经典 = 固定尺寸（与老版本像素一致，CSS 变量的默认值就是它）
-   自适应 = 按屏幕宽高算出牌尺寸，手机上不会过大、平板上不会过小
-   选择记在 localStorage（mj_layout），刷新/切页都保留 */
-const LAYOUT_KEY="mj_layout";
+/* ---------- 布局（★ v2.7.0 经典/自适应；★ v2.7.8 改成 5 档循环） ----------
+   1 经典（默认，＝升级前的固定尺寸，CSS 变量默认值就是它）
+   2 自适应（按屏幕宽高算尺寸，手机上不会过大、平板上不会过小）
+   3 大 / 4 更大 / 5 最大 ＝「自适应」算出的基准再乘 1.2 / 1.4 / 1.6
+   （牌池是 flex-wrap，放大到一行放不下会自动换行，不会溢出）
+   选择记在 localStorage（mj_layout2，存档位索引），刷新/切页都保留 */
+const LAYOUT_KEY="mj_layout2";   /* ★ 换键名：老键 mj_layout 只有 fixed/auto 两个值 */
+const LAYOUT_LEVELS=[
+  {name:"经典",  key:"fixed",scale:0},     /* ★ 第 1 档＝默认＝与升级前逐像素一致 */
+  {name:"自适应",key:"auto", scale:1},
+  {name:"大",    key:"auto", scale:1.2},
+  {name:"更大",  key:"auto", scale:1.4},
+  {name:"最大",  key:"auto", scale:1.6},
+];
+const LAYOUT_DEFAULT=0;
+const LAYOUT_SCALE_MAX=96;               /* 只做安全兜底，正常在 46~74 之间 */
+let LAYOUT_IDX=LAYOUT_DEFAULT;
 const LAYOUT_VARS=["--tw","--th","--pw","--ph","--gw","--pgap",
                    "--fw","--fh","--fwi","--fhi","--ww","--wh"];
-function loadLayout(){try{const v=localStorage.getItem(LAYOUT_KEY);return v==="auto"?"auto":"fixed";}
-  catch(e){return "fixed";}}
-function layoutName(){return S.layout==="auto"?"自适应":"经典";}
-function setLayout(m,remember){
-  S.layout=(m==="auto")?"auto":"fixed";
-  document.body.classList.toggle("auto",S.layout==="auto");
-  const b=el("lybtn");
-  if(b){b.textContent="布局："+layoutName();
-        b.title=S.layout==="auto"?"当前：自适应（按屏幕自动缩放）——点一下回到经典固定尺寸"
-                                  :"当前：经典（固定尺寸）——点一下换成自适应";
-        b.classList.toggle("on",S.layout==="auto");}
-  autoSize();
-  if(remember!==false){try{localStorage.setItem(LAYOUT_KEY,S.layout);}catch(e){}}
+function loadLayout(){
+  try{const v=parseInt(localStorage.getItem(LAYOUT_KEY),10);
+      if(v>=0&&v<LAYOUT_LEVELS.length)return v;}catch(e){}
+  return LAYOUT_DEFAULT;
 }
-function toggleLayout(){setLayout(S.layout==="auto"?"fixed":"auto");}
+function layoutLevel(){return LAYOUT_LEVELS[LAYOUT_IDX];}
+function layoutName(){return layoutLevel().name;}
+function setLayout(idx,remember){
+  LAYOUT_IDX=Math.max(0,Math.min(LAYOUT_LEVELS.length-1,idx|0));
+  const L=layoutLevel();
+  S.layout=L.key;
+  document.body.classList.toggle("auto",L.key==="auto");
+  const b=el("lybtn");
+  if(b){b.textContent="布局："+L.name+"（"+(LAYOUT_IDX+1)+"/"+LAYOUT_LEVELS.length+"）";
+        b.title="布局档位：经典（默认，＝升级前的固定尺寸）/ 自适应（按屏幕算）/ "
+               +"大 / 更大 / 最大（＝自适应再放大 1.2 / 1.4 / 1.6 倍）；点一下换下一档。当前："+L.name;
+        b.classList.toggle("on",LAYOUT_IDX!==LAYOUT_DEFAULT);}
+  autoSize();
+  if(remember!==false){try{localStorage.setItem(LAYOUT_KEY,String(LAYOUT_IDX));}catch(e){}}
+}
+function cycleLayout(){setLayout((LAYOUT_IDX+1)%LAYOUT_LEVELS.length);}
+/* ---------- 按钮尺寸（★ v2.7.6：客户端「按钮：…」多档；★ v2.7.7：默认＝最小档，只往大变） ----------
+   用户要求：默认就是现在的大小（也就是最小档），后面一级级往大调，分 5 档看看哪一级顺手。
+   只改 3 个 CSS 变量（--btn-fs / --btn-pad-y / --btn-pad-x）——
+   模式行（立牌/吃/碰/明杠/暗杠）、重置、布局、本按钮、选项勾选、风圈/风位、
+   底部 ↑↓、弹窗按钮 一次全跟着变。
+   ★ 第 1 档（默认）＝**清掉内联变量、回落 CSS 默认值** ⇒ 与升级前逐像素一致 */
+const BTN_KEY="mj_btnsize2";   /* ★ v2.7.7 换了键名：老键 mj_btnsize 是「含更小档」那套，语义已变，不再读 */
+const BTN_LEVELS=[
+  {name:"最小",fs:15,py:7, px:11},   /* ★ 第 1 档＝默认＝与升级前一模一样，别改这行 */
+  {name:"大",  fs:17,py:9, px:14},
+  {name:"更大",fs:19,py:11,px:17},
+  {name:"很大",fs:21,py:13,px:20},
+  {name:"最大",fs:23,py:15,px:23},
+];
+const BTN_DEFAULT=0;                   /* 第 1 档＝默认（＝最小，＝升级前的大小） */
+let BTN_IDX=BTN_DEFAULT;
+function loadBtnSize(){
+  try{const v=parseInt(localStorage.getItem(BTN_KEY),10);
+      if(v>=0&&v<BTN_LEVELS.length)return v;}catch(e){}
+  return BTN_DEFAULT;
+}
+function applyBtnSize(idx,remember){
+  BTN_IDX=Math.max(0,Math.min(BTN_LEVELS.length-1,idx|0));
+  const L=BTN_LEVELS[BTN_IDX];
+  const root=document.documentElement;
+  if(BTN_IDX===BTN_DEFAULT){           /* 默认档：清内联值 → CSS 默认（老样子） */
+    ["--btn-fs","--btn-pad-y","--btn-pad-x"].forEach(k=>root.style.removeProperty(k));
+  }else{
+    root.style.setProperty("--btn-fs",L.fs+"px");
+    root.style.setProperty("--btn-pad-y",L.py+"px");
+    root.style.setProperty("--btn-pad-x",L.px+"px");
+  }
+  const b=el("szbtn");
+  if(b){b.textContent="按钮："+L.name+"（"+(BTN_IDX+1)+"/"+BTN_LEVELS.length+"）";
+        b.title="按钮大小（模式行/选项/风圈风位一起变）：最小（默认）/ 大 / 更大 / 很大 / 最大；"
+               +"点一下换下一档（只往大变，回到最小就一圈循环回来）。当前："+L.name;
+        b.classList.toggle("on",BTN_IDX!==BTN_DEFAULT);}
+  if(remember!==false){try{localStorage.setItem(BTN_KEY,String(BTN_IDX));}catch(e){}}
+}
+function cycleBtnSize(){applyBtnSize((BTN_IDX+1)%BTN_LEVELS.length);}
 function autoSize(){
   const root=document.documentElement;
-  if(S.layout!=="auto"){                 /* 经典：清掉 JS 写的值，回到 CSS 默认（老样子） */
+  const L=layoutLevel();
+  if(L.key!=="auto"||!L.scale){           /* 经典：清掉 JS 写的值，回到 CSS 默认（老样子） */
     LAYOUT_VARS.forEach(k=>root.style.removeProperty(k));
     return;
   }
@@ -563,8 +640,10 @@ function autoSize(){
   const nine=(avail-pgap*8-4)/9;          /* 一行 9 张（筒/索/万） */
   const vh=window.innerHeight||640;
   const byH=Math.min(vh*0.115,74);        /* 牌池 4 行，不能把屏占满 */
-  let w=Math.floor(Math.min(nine,byH/1.364));
-  w=Math.max(20,Math.min(w,46));     /* 夹紧：手机不会太小、平板也不会太大 */
+  let base=Math.floor(Math.min(nine,byH/1.364));
+  base=Math.max(20,Math.min(base,46));    /* ★ 自适应基准：与 v2.7.0 的自适应完全一致 */
+  let w=Math.round(base*L.scale);         /* ★ v2.7.8：3~5 档＝在基准上再放大 */
+  w=Math.max(20,Math.min(w,LAYOUT_SCALE_MAX));
   const h=Math.round(w*1.364);
   root.style.setProperty("--pw",w+"px");
   root.style.setProperty("--ph",h+"px");
@@ -581,9 +660,30 @@ function autoSize(){
   root.style.setProperty("--wh",Math.round(h*0.83)+"px");
 }
 let asTimer=null;
-function autoSizeLater(){clearTimeout(asTimer);asTimer=setTimeout(autoSize,120);}
+function autoSizeLater(){clearTimeout(asTimer);asTimer=setTimeout(()=>{autoSize();updateJumpBtns();},120);}
 window.addEventListener("resize",autoSizeLater);
 window.addEventListener("orientationchange",autoSizeLater);
+/* ★ v2.7.9：底部两个「跳转」按钮——滚到牌池 / 结果**区块**并闪一下边框。
+   原来是无反馈的 scrollTo 顶/底：页面本来就在顶部/底部、或内容不足一屏时，
+   点了自然「没反应」（那是正常的）—— 现在改成滚到区块 + 高亮，且没得滚时置灰 */
+function gotoBlock(id){
+  const box=el(id);
+  if(!box)return;
+  const hd=document.querySelector("header");
+  const off=(hd?hd.offsetHeight:0)+6;          /* 躲开固定顶栏 */
+  const top=box.getBoundingClientRect().top+(window.pageYOffset||0)-off;
+  window.scrollTo({top:Math.max(0,top),behavior:"smooth"});
+  box.classList.remove("flash");
+  void box.offsetWidth;                        /* 强制重排，让动画能重播 */
+  box.classList.add("flash");
+  setTimeout(()=>box.classList.remove("flash"),1300);
+}
+function updateJumpBtns(){
+  const can=document.documentElement.scrollHeight>window.innerHeight+8;
+  const bp=el("jump_pool"),br=el("jump_res");
+  if(bp){bp.disabled=!can;bp.title=can?"滚到「牌选择区」":"页面内容不足一屏，无需滚动";}
+  if(br){br.disabled=!can;br.title=can?"滚到「算番结果」":"页面内容不足一屏，无需滚动";}
+}
 /* ★ v2.5.0：图片地址也用 q() 带上口令 —— 这样即使「Web 客户端」被设成要口令，
    用 http://ip:端口/?token=xxx 打开页面时牌面图照样能加载（不会一片碎图） */
 function img(code){return '<img src="'+q("/tiles/"+code+".png")+'" alt="'+code+'" title="'+(NAMES[code]||"")+'">';}
@@ -732,6 +832,7 @@ function baseHint(){return "立牌还差 "+Math.max(0,needConcealed()-concealedL
 
 /* ---------- 渲染 ---------- */
 function render(){
+  setTimeout(updateJumpBtns,0);           /* ★ v2.7.9：内容长度变了→跳转按钮该亮/该灰 */
   el("m_melds").innerHTML=meldHtml();      /* ★ 副露：暗杠要显示为 面·背·背·面 */
   mkTiles(el("m_hand"),concealedList(),"（请在牌池点牌）",true);   /* 点一张 = 减一张 */
   mkTiles(el("m_win"),S.win?[S.win]:[],"（未指定）",true);
@@ -887,7 +988,9 @@ function loadToken(){
 /* ---------- 启动 ---------- */
 (async function(){
   loadToken();
-  setLayout(loadLayout(),false);       /* 恢复上次选的布局（默认经典，不影响老布局） */
+  setLayout(loadLayout(),false);       /* ★ v2.7.8 恢复上次选的布局档位（默认第 1 档＝经典） */
+  applyBtnSize(loadBtnSize(),false);   /* ★ v2.7.6 恢复上次的按钮大小（默认第 1 档＝最小＝老样子） */
+  updateJumpBtns();                    /* ★ v2.7.9 底部跳转按钮：没得滚就置灰 */
   try{
     const h=await api("/api/health");
     el("st").textContent="已连接";
@@ -956,6 +1059,19 @@ MANIFEST = {
 }
 
 
+def render_web_client(app_name: str = APP_NAME, show=()) -> str:
+    """生成 Web 客户端页面（★ v2.7.5）
+
+    两件事：① 填应用名；② 决定模式行里「接口自测页 / 换口令」两个按钮**显示还是隐藏**（见 WEB_SHOW_ITEMS）。
+    `show` 里的键对应 WEB_SHOW_ITEMS；不在里面的就写成 `display:none`（**默认都不显示**）。
+    """
+    on = set(show or ())
+    html = WEB_CLIENT.replace("__APP__", app_name)
+    html = html.replace("__SHOW_DEBUG__", "" if "debug" in on else "display:none")
+    html = html.replace("__SHOW_TOKEN__", "" if "token" in on else "display:none")
+    return html
+
+
 def _tile_image_bytes(name: str) -> Optional[bytes]:
     """把《麻将图》里的牌面图读出来给 Web 客户端用（只允许白名单文件名）"""
     if not TILE_FILE_RE.match(name):
@@ -983,6 +1099,7 @@ class Handler(BaseHTTPRequestHandler):
     engine: Engine = None          # 由 ApiServer 注入
     token: str = ""
     anon: tuple = ()               # ★ v2.5.0 免口令分组（见 ANON_GROUPS）
+    show: tuple = ()               # ★ v2.7.5 Web 页面上要显示的可选按钮（见 WEB_SHOW_ITEMS）
 
     # ---- 基础
     def log_message(self, fmt, *args):        # noqa: A003
@@ -1116,7 +1233,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         # ---- 静态资源
         if path in ("/", "/web", "/index.html"):
-            return self._send(WEB_CLIENT.replace("__APP__", APP_NAME),
+            return self._send(render_web_client(APP_NAME, getattr(self, "show", ())),
                               ctype="text/html; charset=utf-8")
         if path == "/debug":
             return self._send(DEBUG_HTML.replace("__APP__", APP_NAME),
@@ -1222,13 +1339,15 @@ class ApiServer:
 
     def __init__(self, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
                  token: str = "", rules_path: Optional[str] = None,
-                 verbose: bool = False, anon=None):
+                 verbose: bool = False, anon=None, show=None):
         self.host = host
         self.port = int(port)
         self.token = token or ""
         # ★ v2.5.0 免口令分组：anon=None 表示「用默认」（web+debug，与旧版行为一致）；
         #   anon=() 才是「全部要口令」。
         self.anon = tuple(ANON_DEFAULT if anon is None else anon)
+        # ★ v2.7.5：Web 页面上要显示的可选按钮（接口自测页 / 换口令），默认都不显示
+        self.show = tuple(WEB_SHOW_DEFAULT if show is None else show)
         self.verbose = verbose
         self.engine = Engine(rules_path)
         self._httpd: Optional[ThreadingHTTPServer] = None
@@ -1258,7 +1377,7 @@ class ApiServer:
             return self.url
         handler = type("_Handler", (Handler,),
                        {"engine": self.engine, "token": self.token,
-                        "anon": self.anon})
+                        "anon": self.anon, "show": self.show})
         try:
             self._httpd = QuietHTTPServer((self.host, self.port), handler)
         except OSError as exc:
@@ -1307,6 +1426,9 @@ def main(argv=None) -> int:
     ap.add_argument("--anon", default=None,
                     help="免口令分组（逗号分隔）：web,debug,info,score,waits；"
                          "none = 全部要口令；默认 " + ",".join(ANON_DEFAULT))
+    ap.add_argument("--show", default=None,
+                    help="Web 页面上要显示的按钮（逗号分隔）：debug（接口自测页）、"
+                         "token（换口令）；默认**两个都不显示**")
     ap.add_argument("--verbose", action="store_true", help="打印访问日志")
     args = ap.parse_args(argv)
     if args.anon is None:
@@ -1315,9 +1437,13 @@ def main(argv=None) -> int:
         anon = []
     else:
         anon = [k.strip() for k in str(args.anon).split(",") if k.strip()]
+    if args.show is None:
+        show = list(WEB_SHOW_DEFAULT)          # 默认：接口自测页 / 换口令 都不显示
+    else:
+        show = [k.strip() for k in str(args.show).split(",") if k.strip()]
 
     srv = ApiServer(args.host, args.port, args.token, verbose=args.verbose,
-                    anon=anon)
+                    anon=anon, show=show)
     try:
         url = srv.start()
     except ApiError as exc:
@@ -1334,6 +1460,8 @@ def main(argv=None) -> int:
         print("  口令      : %s（请求头 X-Api-Token: %s）" % (args.token, args.token))
         print("  免口令    : %s（改 --anon 可调）"
               % ("、".join(anon) if anon else "无（全部要口令）"))
+    print("  页面按钮  : %s（--show debug,token 可显示接口自测页 / 换口令）"
+          % ("、".join(show) if show else "都不显示（默认）"))
     print("  JSON 接口: %s/api/help     接口自测页: %s/debug     按 Ctrl+C 结束"
           % (url, url))
     try:
