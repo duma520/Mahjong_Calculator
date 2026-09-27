@@ -1,0 +1,199 @@
+==========================================================================
+国标麻将算番器 —— 本地 HTTP API 冒烟测试
+时间: 2026-09-27 09:08:09
+==========================================================================
+
+【1】服务启动：http://127.0.0.1:11307
+  [OK]   端口由系统分配
+
+【2】基础端点
+  [OK]   GET /api/health
+  [OK]   CORS 头存在
+  [OK]   GET /api/version 番种数 81
+  [OK]   GET /api/tiles 34 张
+  [OK]   牌张表首尾正确
+  [OK]   牌张表带花色/数字
+  [OK]   GET /api/fan_table 12 档
+  [OK]   番种合计 81
+  [OK]   番表含定义文本
+  [OK]   GET /api/help 文本
+
+【2b】Web 客户端 / 静态资源
+  [OK]   GET / 返回 Web 客户端页面
+  [OK]   HTML Content-Type
+  [OK]   页面含牌池/结果/听牌 区块
+  [OK]   页面引用牌面图路由
+  [OK]   页面调用 /api/score 与 /api/waits
+  [OK]   页面含 8 张花牌编码
+  [OK]   页面支持 ?token= 与 localStorage
+  [OK]   页面未残留模板占位符
+  [OK]   算番请求把和张拼进 concealed（14 张口径）
+  [OK]   设了和张后走算番分支（不再落到听牌分支）
+  [OK]   牌池只建一次、刷新只改状态（避免快速连点丢点击）
+  [OK]   点花牌走选花牌逻辑（不进手牌）
+  [OK]   选项区四行齐全（复选框/圈风/风位/花牌）
+  [OK]   花牌已移出牌池（牌池只有索/筒/万/字牌 4 行）
+  [OK]   牌池 → 模式 → 选项 → 已选牌 的顺序与桌面版一致
+  [OK]   花牌行只建一次、刷新只改状态
+  [OK]   花牌固定顺序（春夏秋冬梅兰竹菊）
+  [OK]   重置=全部复位（含花牌/选项/风圈风位）
+  [OK]   底部两个按钮＝滚到牌池/结果区块（不再是无反馈的 scrollTo 顶/底）
+  [OK]   跳转目标卡片有 id（c_pool / c_res）
+  [OK]   跳转后区块高亮（.flash）+ 不足一屏时置灰（button:disabled）
+  [OK]   gotoBlock 滚到区块（躲开固定顶栏）+ updateJumpBtns 在启动/render/resize 都跟
+  [OK]   牌池每行是 flex 横排（四行 9/9/9/7 张，不是一行一只）
+  [OK]   牌池容器带 .pool 类（行样式才生效）
+  [OK]   牌上红色数字是可点的「−1」按钮
+  [OK]   角标事件被截住（不会冒泡成加一张）
+  [OK]   已选牌区点一张可减（立牌/和张）
+  [OK]   提示文案不再依赖右键
+  [OK]   禁掉长按系统菜单/文本选择（手机体验）
+  [OK]   牌尺寸改成 CSS 变量、默认值＝经典固定尺寸（旧布局不变）
+  [OK]   牌池/已选牌/花牌/候选牌都走变量
+  [OK]   牌池行内间距也走变量（自适应时会收紧）
+  [OK]   布局按钮：5 档循环（经典→自适应→大→更大→最大）
+  [OK]   默认布局是经典（第 1 档）——不动老布局
+  [OK]   布局 5 档名字：经典/自适应/大/更大/最大
+  [OK]   布局档位系数：0（经典固定）/ 1（自适应）/ 1.2 / 1.4 / 1.6
+  [OK]   布局选择记在 localStorage（mj_layout2，存档位索引）
+  [OK]   自适应：按屏幕宽高算牌尺寸（一行 9 张 + 高度上限）
+  [OK]   自适应基准夹紧区间不变（20~46），3~5 档在基准上乘系数
+  [OK]   经典模式：清掉 JS 写的变量，回到 CSS 默认（像素级还原旧布局）
+  [OK]   窗口尺寸/横竖屏变化时会重算（防抖）
+  [OK]   副露渲染有专门函数（不再把所有牌平铺）
+  [OK]   暗杠渲染为 面·背·背·面（中间两张用牌背 empty.png）
+  [OK]   明杠/碰/吃仍是全部正面（只有暗杠盖牌）
+  [OK]   不同副露之间有间隔（.meldgap）
+  [OK]   GET /debug 接口自测页
+  [OK]   GET /manifest.webmanifest
+  [OK]   manifest Content-Type
+  [OK]   GET /tiles/B1.png 图片
+  [OK]   GET /tiles/empty.png
+  [OK]   花牌图 /tiles/P1.png
+  [OK]   非法牌面图 → 404
+  [OK]   牌面图路由拒绝路径穿越
+
+【3】算番 POST /api/score
+  [OK]   七对含四张 → 49 番
+  [OK]   番种含 七对/清一色/自摸
+  [OK]   不计四归一（必然并存）
+  [OK]   起和达标 reach_standard
+  [OK]   返回和张
+  [OK]   副露+暗杠算得出番
+  [OK]   副露不吃七对
+  [OK]   门风刻（西）生效
+  [OK]   花牌 3 张 → 花牌 3 分
+  [OK]   花牌不计入起和分
+
+【4】其它入参形式
+  [OK]   concealed 支持 {牌:张数}
+  [OK]   GET /api/score 简写形式
+  [OK]   GET 形式能识别 tsumo
+
+【5】听牌 POST /api/waits
+  [OK]   九莲宝灯听牌 9 张（1~9 万均可和）
+  [OK]   九莲宝灯 88 番（听任意张都是 88+）
+  [OK]   听牌项带 tile/name/total
+  [OK]   听 9 万算得出九莲宝灯
+  [OK]   /api/waits_all 不筛起和分
+  [OK]   waits_all 含不足 8 分项
+
+【6】错误处理
+  [OK]   非法牌张代码 → 400
+  [OK]   张数不足 → 400 提示
+  [OK]   concealed 不含和张（13 张）→ 400 并说明应为 14 张
+  [OK]   concealed 含和张（14 张）→ 九莲宝灯 106 番
+  [OK]   和张不在 concealed 里 → 400
+  [OK]   同一张牌 5 张 → 400
+  [OK]   听牌张数不对 → 400
+  [OK]   请求体非 JSON → 400
+  [OK]   未知接口 → 404
+  [OK]   非法吃（不连） → 400
+  [OK]   非法风位 → 400
+  [OK]   花牌超 8 → 400
+  [OK]   不能和牌时 message 有说明
+
+【7】口令 / CORS 预检 / 重启
+  [OK]   OPTIONS 预检 204
+  [OK]   带口令时无 token → 401
+  [OK]   带 token 头 → 200
+  [OK]   ?token= 也认
+  [OK]   带口令时首页免口令可访问（Web 客户端）
+  [OK]   带口令时牌面图免口令可访问
+  [OK]   带口令时数据接口仍拦（无 token）
+  [OK]   口令服务已停止
+
+【7b】免口令白名单（v2.5.0：设了口令后，分项允许「不用口令也能用」）
+  [OK]   默认 ANON_DEFAULT = web+debug（与 v2.4.x 行为一致）
+  [OK]   不传 anon 时按默认（web+debug）
+  [OK]   显式 anon=() 则是「全部要口令」
+  [OK]   分组表齐全（web/debug/info/score/waits）
+  [OK]   anon=web → 首页免口令
+  [OK]   anon=web 不会误放行 /api/score（“/”不能当前缀）
+  [OK]   anon=web 不会误放行 /api/health
+  [OK]   anon=info → /api/health 免口令可用
+  [OK]   anon=info → /api/tiles 免口令可用
+  [OK]   anon=info → /api/score 仍然要口令
+  [OK]   anon 没开 web → 首页也要口令
+  [OK]   关掉 web 后：带 ?token= 仍能打开首页
+  [OK]   anon 没开 web → 牌面图要口令
+  [OK]   牌面图带 token 可取（200 + PNG）
+  [OK]   anon 没开 debug → 自测页要口令
+  [OK]   anon=score → POST 算番免口令（106 番）
+  [OK]   anon=score → GET 简写也免口令
+  [OK]   anon=waits → 听牌免口令可用
+  [OK]   anon=waits → /api/waits_all 也在白名单内
+  [OK]   anon=score,waits → /api/health 仍要口令
+  [OK]   anon=() → 连首页也要口令
+  [OK]   anon=() → 带 token 首页 200
+  [OK]   anon=() → 接口要口令
+  [OK]   anon=全部 → 首页免口令
+  [OK]   anon=全部 → 查询接口免口令
+  [OK]   anon=全部 → 算番免口令
+  [OK]   anon=全部 → 自测页免口令
+  [OK]   没设口令 → anon=() 也免口令（口令为空不校验）
+  [OK]   没设口令 → 首页免口令
+  [OK]   未知分组键不报错，其它组照常生效
+  [OK]   未知分组键不会误放行 score
+  [OK]   服务已停止
+  [OK]   端口可复用（重新启动）
+
+【7c】客户端提前断开（手机刷新/关页面）不刷 traceback（v2.7.4）
+  [OK]   有统一的 CLIENT_GONE_ERRORS 常量
+  [OK]   Handler 覆盖了 handle_one_request（吞掉断开异常）
+  [OK]   服务用 QuietHTTPServer（handle_error 静音）
+  [OK]   4 次 RST 断开：控制台没有 'Exception occurred'
+  [OK]   4 次 RST 断开：控制台没有 traceback / ConnectionResetError
+  [OK]   断开之后服务照常可用
+
+【7d】Web 页面「接口自测页 / 换口令」按钮默认不显示（v2.7.5）
+  [OK]   WEB_SHOW_ITEMS = debug/token 两项
+  [OK]   默认值 WEB_SHOW_DEFAULT 为空（都不显示）
+  [OK]   默认首页 HTTP 200
+  [OK]   默认：接口自测页按钮被隐藏
+  [OK]   默认：换口令按钮被隐藏
+  [OK]   页面里没有残留占位符（__SHOW_/__APP__）
+  [OK]   show=debug：自测页按钮显示（style 为空）
+  [OK]   show=debug：换口令仍然隐藏
+  [OK]   show=debug,token：两个按钮都显示
+  [OK]   render_web_client：应用名与占位符都替换掉
+
+【7e】客户端「按钮：…」5 档大小（v2.7.6 起；v2.7.7 调档：默认＝最小、只往大）
+  [OK]   CSS 默认按钮尺寸 = 升级前的 15px / 7px 11px（默认档不动老外观）
+  [OK]   button 规则走变量（字号 + 内边距）
+  [OK]   localStorage 键 = mj_btnsize2
+  [OK]   BTN_LEVELS 共 5 档
+  [OK]   5 档字号递增 15/17/19/21/23（只数 BTN_LEVELS 里的）
+  [OK]   5 档内边距 7/11 → 9/14 → 11/17 → 13/20 → 15/23
+  [OK]   默认档 = 第 1 档（最小），字号 15 且内边距 7/11（＝现在的大小）
+  [OK]   没有比默认更小的档（第一档就是最小）
+  [OK]   按钮 #szbtn 加在「布局」按钮之后、点击即切换
+  [OK]   cycleBtnSize 在 5 档之间循环
+  [OK]   默认档清掉内联变量（回落 CSS 默认＝与升级前逐像素一致）
+  [OK]   启动时恢复上次档位（刷新/切页都记得）
+  [OK]   loadBtnSize 读 localStorage + 越界回默认档
+  [OK]   szbtn 首屏文案与默认档一致（按钮：最小（1/5））
+
+==========================================================================
+结果: 通过 167 项，失败 0 项
+==========================================================================
