@@ -1,7 +1,7 @@
 {
   "geometry": [
-    52,
-    115,
+    83,
+    72,
     680,
     926
   ],
@@ -9,12 +9,20 @@
   "window_maximized": false,
   "wind_round": "东",
   "wind_seat": "东",
-  "flowers": 0,
-  "flowers_picked": [],
-  "tsumo": false,
-  "last_tile": false,
-  "special_a": false,
-  "special_b": false,
+  "flowers": 7,
+  "flowers_picked": [
+    "S1",
+    "S2",
+    "S3",
+    "P1",
+    "P2",
+    "P3",
+    "P4"
+  ],
+  "tsumo": true,
+  "last_tile": true,
+  "special_a": true,
+  "special_b": true,
   "mode": "stand",
   "page": 0,
   "api_port": 8080,
@@ -22,7 +30,11 @@
   "api_lan": true,
   "api_token": "",
   "api_anon": [
-    "web"
+    "web",
+    "debug",
+    "info",
+    "score",
+    "waits"
   ],
   "api_show": []
 }
