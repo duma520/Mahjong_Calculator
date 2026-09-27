@@ -1,5 +1,9 @@
 # 国标麻将算番器 · 截图 v2.7.9
 
+<img width="682" height="958" alt="image" src="https://github.com/user-attachments/assets/dfe753e2-e010-41ef-9a2f-f0222499343d" />
+
+<img width="682" height="958" alt="image" src="https://github.com/user-attachments/assets/b9da32f7-757f-4b18-a46a-38c37324b674" />
+
 <img width="1257" height="948" alt="image" src="https://github.com/user-attachments/assets/e804ba14-8cdb-49f5-91ed-4c1d5ef0f981" />
 
 <img width="1257" height="948" alt="image" src="https://github.com/user-attachments/assets/7e9cc277-4363-4ddb-8ce5-aad9e4907f76" />
