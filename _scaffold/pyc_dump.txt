@@ -1,0 +1,186 @@
+# 文件: __pycache__\mahjong_core.cpython-310.pyc (14367 字节)
+# 顶层名字: json, collections, defaultdict, Counter, typing, List, Dict, Set, Tuple, Optional, MahjongFanCalculator
+
+=== code: <module>  (args=(), vars=(), flags=0x40) ===
+  consts: 0, None, ('defaultdict', 'Counter'), ('List', 'Dict', 'Set', 'Tuple', 'Optional'), 'MahjongFanCalculator'
+  names : json, collections, defaultdict, Counter, typing, List, Dict, Set, Tuple, Optional, MahjongFanCalculator
+  === code: MahjongFanCalculator  (args=(), vars=(), flags=0x40) ===
+    consts: 'MahjongFanCalculator', 'MahjongFanCalculator.__init__', 'return', 'MahjongFanCalculator._build_reverse_index', 'tiles', 'hand_config', 'MahjongFanCalculator.calculate_fan', 'result', 'MahjongFanCalculator._check_special_fans', 'MahjongFanCalculator._check_88_fan', 'MahjongFanCalculator._is_da_si_xi', 'MahjongFanCalculator._is_da_san_yuan', 'MahjongFanCalculator._is_lv_yi_se', 'MahjongFanCalculator._is_jiu_lian_bao_deng', 'MahjongFanCalculator._is_si_gang', 'MahjongFanCalculator._is_lian_qi_dui', 'MahjongFanCalculator._is_shi_san_yao', 'MahjongFanCalculator._check_64_fan', 'MahjongFanCalculator._is_qing_yao_jiu', 'MahjongFanCalculator._is_xiao_si_xi', 'MahjongFanCalculator._is_xiao_san_yuan', 'MahjongFanCalculator._is_zi_yi_se', 'MahjongFanCalculator._is_si_an_ke', 'MahjongFanCalculator._is_yi_se_shuang_long_hui', 'MahjongFanCalculator._check_48_fan', 'MahjongFanCalculator._check_32_fan', 'MahjongFanCalculator._check_24_fan', 'MahjongFanCalculator._check_16_fan', 'MahjongFanCalculator._check_12_fan', 'MahjongFanCalculator._check_8_fan', 'MahjongFanCalculator._check_6_fan', 'MahjongFanCalculator._check_4_fan', 'MahjongFanCalculator._check_2_fan', 'MahjongFanCalculator._check_1_fan', 'MahjongFanCalculator._handle_exclusions', 'MahjongFanCalculator.is_winning_hand', 'MahjongFanCalculator.get_possible_winning_tiles', None
+    names : __name__, __module__, __qualname__, __init__, Dict, str, List, Tuple, int, _build_reverse_index, calculate_fan, _check_special_fans, _check_88_fan, bool, _is_da_si_xi, _is_da_san_yuan, _is_lv_yi_se, _is_jiu_lian_bao_deng, _is_si_gang, _is_lian_qi_dui, _is_shi_san_yao, _check_64_fan, _is_qing_yao_jiu, _is_xiao_si_xi, _is_xiao_san_yuan, _is_zi_yi_se, _is_si_an_ke, _is_yi_se_shuang_long_hui, _check_48_fan, _check_32_fan, _check_24_fan, _check_16_fan, _check_12_fan, _check_8_fan, _check_6_fan, _check_4_fan, _check_2_fan, _check_1_fan, _handle_exclusions, is_winning_hand, get_possible_winning_tiles
+    === code: __init__  (args=('self',), vars=('self', 'f'), flags=0x43) ===
+      consts: None, 'rules.json', 'r', 'utf-8', ('encoding',), ('F1', 'F2', 'F3', 'F4'), ('J1', 'J2', 'J3'), '1', '9', ('T2', 'T3', 'T4', 'T6', 'T8', 'J2'), ('W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9'), ('T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9'), ('B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9'), ('characters', 'bamboos', 'dots')
+      names : open, json, load, rules, _build_reverse_index, reverse_index, WINDS, DRAGONS, ALL_HONORS, ONE_NINE, GREEN_TILES, SUITS
+    === code: _build_reverse_index  (args=('self',), vars=('self', 'index', 'fan_value', 'fan_list', 'fan_info'), flags=0x43) ===
+      consts: '构建番种反向索引，便于快速查找', 'name'
+      names : defaultdict, list, rules, items, append, dict
+    === code: calculate_fan  (args=('self', 'tiles', 'hand_config'), vars=('self', 'tiles', 'hand_config', 'result'), flags=0x43) ===
+      consts: '\n        计算番数\n        :param tiles: 选择的牌列表\n        :param hand_config: 手牌配置(圈风、门风、花牌等)\n        :return: 番种及其对应的番数\n        '
+      names : _check_special_fans, _check_88_fan, _check_64_fan, _check_48_fan, _check_32_fan, _check_24_fan, _check_16_fan, _check_12_fan, _check_8_fan, _check_6_fan, _check_4_fan, _check_2_fan, _check_1_fan, _handle_exclusions
+    === code: _check_special_fans  (args=('self', 'result', 'tiles', 'hand_config'), vars=('self', 'result', 'tiles', 'hand_config', 'special_fans', 'fan'), flags=0x43) ===
+      consts: '检查特殊番种(天和、地和等)', 'special_fans', ('天和', '地和', '人和'), 8, ('自摸', '和绝张', '抢杠和', '海底捞月', '妙手回春', '杠上开花'), None
+      names : get
+    === code: _check_88_fan  (args=('self', 'result', 'tiles'), vars=('self', 'result', 'tiles'), flags=0x43) ===
+      consts: '检查88番', 88, '大四喜', '大三元', '绿一色', '九莲宝灯', '四杠', '连七对', '十三幺', None
+      names : _is_da_si_xi, _is_da_san_yuan, _is_lv_yi_se, _is_jiu_lian_bao_deng, _is_si_gang, _is_lian_qi_dui, _is_shi_san_yao
+    === code: _is_da_si_xi  (args=('self', 'tiles'), vars=('self', 'tiles', 'wind_counts'), flags=0x3) ===
+      consts: '大四喜: 由4副风刻组成的和牌', 'MahjongFanCalculator._is_da_si_xi.<locals>.<genexpr>', 4
+      names : Counter, all, values, len
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'tile'), flags=0x33) ===
+        consts: None
+        names : WINDS
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'count'), flags=0x73) ===
+        consts: 3, None
+        names : 
+    === code: _is_da_san_yuan  (args=('self', 'tiles'), vars=('self', 'tiles', 'dragon_counts'), flags=0x3) ===
+      consts: '大三元: 和牌中有中、发、白3副刻子', 'MahjongFanCalculator._is_da_san_yuan.<locals>.<genexpr>', 3
+      names : Counter, all, values, len
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'tile'), flags=0x33) ===
+        consts: None
+        names : DRAGONS
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'count'), flags=0x73) ===
+        consts: 3, None
+        names : 
+    === code: _is_lv_yi_se  (args=('self', 'tiles'), vars=('self', 'tiles'), flags=0x3) ===
+      consts: '绿一色: 由23468条及发字组成的和牌', 'MahjongFanCalculator._is_lv_yi_se.<locals>.<genexpr>'
+      names : all
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'tile'), flags=0x33) ===
+        consts: None
+        names : GREEN_TILES
+    === code: _is_jiu_lian_bao_deng  (args=('self', 'tiles'), vars=('self', 'tiles', 'suits', 'tile', 'numbers', 'base_pattern', 'extra', 'temp_pattern'), flags=0x43) ===
+      consts: '九莲宝灯: 由一种花色序数牌按1112345678999组成的特定牌型', 14, False, 0, ('W', 'B', 'T'), 1, 'MahjongFanCalculator._is_jiu_lian_bao_deng.<locals>.<genexpr>', (1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9), 10, True
+      names : len, set, add, sorted, range
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'tile'), flags=0x73) ===
+        consts: 1, None
+        names : int
+    === code: _is_si_gang  (args=('self', 'tiles'), vars=('self', 'tiles', 'counts', 'gang_count'), flags=0x43) ===
+      consts: '四杠: 由4个杠组成的和牌', 'MahjongFanCalculator._is_si_gang.<locals>.<genexpr>', 4
+      names : Counter, sum, values
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'cnt'), flags=0x73) ===
+        consts: 4, 1, None
+        names : 
+    === code: _is_lian_qi_dui  (args=('self', 'tiles'), vars=('self', 'tiles', 'counts', 'suit', 'tile'), flags=0x3) ===
+      consts: '连七对: 由一种花色序数牌组成序数相连的7个对子', 14, False, 'MahjongFanCalculator._is_lian_qi_dui.<locals>.<genexpr>', None, 0, ('W', 'B', 'T'), 1, 7
+      names : len, Counter, any, values, keys, append, int, sort, all, range
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'cnt'), flags=0x73) ===
+        consts: 2, None
+        names : 
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'i'), flags=0x33) ===
+        consts: 0, None
+        names : 
+    === code: _is_shi_san_yao  (args=('self', 'tiles'), vars=('self', 'tiles', 'required_tiles', 'tile_set', 'counts', 'pair_count', 'single_count'), flags=0x43) ===
+      consts: '十三幺: 由3种序数牌的一、九牌，7种字牌及其中一对作将', frozenset({'W1', 'B1', 'T9', 'F2', 'J2', 'F1', 'W9', 'J1', 'T1', 'B9', 'J3', 'F4', 'F3'}), 14, False, 'MahjongFanCalculator._is_shi_san_yao.<locals>.<genexpr>', 1, 12
+      names : len, set, issubset, Counter, sum, values
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'cnt'), flags=0x73) ===
+        consts: 2, 1, None
+        names : 
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'cnt'), flags=0x73) ===
+        consts: 1, None
+        names : 
+    === code: _check_64_fan  (args=('self', 'result', 'tiles'), vars=('self', 'result', 'tiles'), flags=0x43) ===
+      consts: '检查64番', 64, '清幺九', '小四喜', '小三元', '字一色', '四暗刻', '一色双龙会', None
+      names : _is_qing_yao_jiu, _is_xiao_si_xi, _is_xiao_san_yuan, _is_zi_yi_se, _is_si_an_ke, _is_yi_se_shuang_long_hui
+    === code: _is_qing_yao_jiu  (args=('self', 'tiles'), vars=('self', 'tiles', 'tile'), flags=0x43) ===
+      consts: '清幺九: 全部由序数牌一、九的刻子、顺子及将牌组成', 0, ('W', 'B', 'T'), 1, ('1', '9'), False, True
+      names : 
+    === code: _is_xiao_si_xi  (args=('self', 'tiles'), vars=('self', 'tiles', 'wind_counts', 'pair_count', 'ke_count'), flags=0x3) ===
+      consts: '小四喜: 有风牌的3副刻子及将牌', 'MahjongFanCalculator._is_xiao_si_xi.<locals>.<genexpr>', 3, 1
+      names : Counter, sum, values
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'tile'), flags=0x33) ===
+        consts: None
+        names : WINDS
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'cnt'), flags=0x73) ===
+        consts: 2, 1, None
+        names : 
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'cnt'), flags=0x73) ===
+        consts: 3, 1, None
+        names : 
+    === code: _is_xiao_san_yuan  (args=('self', 'tiles'), vars=('self', 'tiles', 'dragon_counts', 'pair_count', 'ke_count'), flags=0x3) ===
+      consts: '小三元: 有箭牌的两副刻子及将牌', 'MahjongFanCalculator._is_xiao_san_yuan.<locals>.<genexpr>', 2, 1
+      names : Counter, sum, values
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'tile'), flags=0x33) ===
+        consts: None
+        names : DRAGONS
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'cnt'), flags=0x73) ===
+        consts: 2, 1, None
+        names : 
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'cnt'), flags=0x73) ===
+        consts: 3, 1, None
+        names : 
+    === code: _is_zi_yi_se  (args=('self', 'tiles'), vars=('self', 'tiles'), flags=0x3) ===
+      consts: '字一色: 全部由字牌的刻子、顺子及将牌组成', 'MahjongFanCalculator._is_zi_yi_se.<locals>.<genexpr>'
+      names : all
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'tile'), flags=0x33) ===
+        consts: None
+        names : ALL_HONORS
+    === code: _is_si_an_ke  (args=('self', 'tiles'), vars=('self', 'tiles', 'counts', 'an_ke_count'), flags=0x43) ===
+      consts: '四暗刻: 4个暗刻组成的和牌', 'MahjongFanCalculator._is_si_an_ke.<locals>.<genexpr>', 4
+      names : Counter, sum, values
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'cnt'), flags=0x73) ===
+        consts: 3, 1, None
+        names : 
+    === code: _is_yi_se_shuang_long_hui  (args=('self', 'tiles'), vars=('self', 'tiles', 'suit', 'tile', 'numbers', 'required', 'pair', 'counts', 'pairs', 'remaining', 'num'), flags=0x43) ===
+      consts: '一色双龙会: 一种花色的两个老少副及5作将', 14, False, None, 0, ('W', 'B', 'T'), 'MahjongFanCalculator._is_yi_se_shuang_long_hui.<locals>.<genexpr>', (1, 1, 2, 2, 3, 3, 7, 7, 8, 8, 9, 9), 'MahjongFanCalculator._is_yi_se_shuang_long_hui.<locals>.<listcomp>', 1, 5
+      names : len, sorted, Counter, items, append
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'tile'), flags=0x73) ===
+        consts: 1, None
+        names : int
+      === code: <listcomp>  (args=('.0',), vars=('.0', 'num', 'cnt'), flags=0x53) ===
+        consts: 2
+        names : 
+    === code: _check_48_fan  (args=('self', 'result', 'tiles'), vars=('self', 'result', 'tiles'), flags=0x43) ===
+      consts: None
+      names : 
+    === code: _check_32_fan  (args=('self', 'result', 'tiles'), vars=('self', 'result', 'tiles'), flags=0x43) ===
+      consts: None
+      names : 
+    === code: _check_24_fan  (args=('self', 'result', 'tiles'), vars=('self', 'result', 'tiles'), flags=0x43) ===
+      consts: None
+      names : 
+    === code: _check_16_fan  (args=('self', 'result', 'tiles'), vars=('self', 'result', 'tiles'), flags=0x43) ===
+      consts: None
+      names : 
+    === code: _check_12_fan  (args=('self', 'result', 'tiles'), vars=('self', 'result', 'tiles'), flags=0x43) ===
+      consts: None
+      names : 
+    === code: _check_8_fan  (args=('self', 'result', 'tiles', 'hand_config'), vars=('self', 'result', 'tiles', 'hand_config'), flags=0x43) ===
+      consts: None
+      names : 
+    === code: _check_6_fan  (args=('self', 'result', 'tiles'), vars=('self', 'result', 'tiles'), flags=0x43) ===
+      consts: None
+      names : 
+    === code: _check_4_fan  (args=('self', 'result', 'tiles', 'hand_config'), vars=('self', 'result', 'tiles', 'hand_config'), flags=0x43) ===
+      consts: None
+      names : 
+    === code: _check_2_fan  (args=('self', 'result', 'tiles', 'hand_config'), vars=('self', 'result', 'tiles', 'hand_config'), flags=0x43) ===
+      consts: None
+      names : 
+    === code: _check_1_fan  (args=('self', 'result', 'tiles'), vars=('self', 'result', 'tiles'), flags=0x43) ===
+      consts: None
+      names : 
+    === code: _handle_exclusions  (args=('self', 'result'), vars=('self', 'result', 'to_remove', 'fan_name', '_', 'fan_info', 'excluded', 'fan'), flags=0x43) ===
+      consts: '处理番种之间的互斥关系', 'exclude', None
+      names : set, reverse_index, get, add, pop
+    === code: is_winning_hand  (args=('self', 'tiles'), vars=('self', 'tiles', 'counts', 'pair_count', 'ke_count'), flags=0x43) ===
+      consts: '判断是否为和牌(14张)', 14, False, 'MahjongFanCalculator.is_winning_hand.<locals>.<genexpr>', 1, 2, 3, 0
+      names : len, Counter, sum, values
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'cnt'), flags=0x73) ===
+        consts: 2, 1, None
+        names : 
+      === code: <genexpr>  (args=('.0',), vars=('.0', 'cnt'), flags=0x73) ===
+        consts: 3, 1, None
+        names : 
+    === code: get_possible_winning_tiles  (args=('self', 'tiles'), vars=('self', 'tiles', 'possible_tiles', 'all_tile_types', 'tile', 'test_hand', 'fan_result'), flags=0x43) ===
+      consts: '获取听牌及对应的番数', 13, 'MahjongFanCalculator.get_possible_winning_tiles.<locals>.<listcomp>', 1, 10
+      names : len, range, WINDS, DRAGONS, is_winning_hand, calculate_fan, append
+      === code: <listcomp>  (args=('.0',), vars=('.0', 'i'), flags=0x53) ===
+        consts: 'W'
+        names : 
+      === code: <listcomp>  (args=('.0',), vars=('.0', 'i'), flags=0x53) ===
+        consts: 'B'
+        names : 
+      === code: <listcomp>  (args=('.0',), vars=('.0', 'i'), flags=0x53) ===
+        consts: 'T'
+        names : 
+
+
+########## 顶层字节码 ##########

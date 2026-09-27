@@ -1,0 +1,3 @@
+已生成 G:\Python_Code\Mahjong_Calculator\icon.ico（5180 字节，尺寸 16/24/32/48/64/128/256）
+预览图 G:\Python_Code\Mahjong_Calculator\_scaffold\icon_preview.png
+Qt 读取: OK（可用尺寸 ['16x16', '24x24', '32x32', '48x48', '64x64', '128x128', '256x256']）

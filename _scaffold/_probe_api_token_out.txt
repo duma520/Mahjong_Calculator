@@ -1,0 +1,19 @@
+初始: api_port=8718 api_lan=False api_token='' api_auto_start=False
+初始: api_server=None
+开局域网后: api_lan=True api_token='042204'
+启动返回=True running=True
+窗口侧: api_port=8718 api_token='042204'
+服务侧: host=0.0.0.0 port=8718 port_actual=8718 token='042204'
+query 带 token → HTTP 200 {
+  "ok": true,
+  "server": "mahjong-api"
+}
+header 带 token → HTTP 200 {
+  "ok": true,
+  "server": "mahjong-api"
+}
+服务侧 token 直连 → HTTP 200 {
+  "ok": true,
+  "server": "mahjong-api"
+}
+netstat LISTENING 8718 → ['TCP    0.0.0.0:8718           0.0.0.0:0              LISTENING       9800']

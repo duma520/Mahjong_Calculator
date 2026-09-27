@@ -1,0 +1,6 @@
+app_icon(): isNull=False sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+pixmap(32x32): isNull=False size=PySide6.QtCore.QSize(32, 32)
+pixmap(32x32) 非透明采样点: 59
+win.windowIcon(): isNull=False sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+hwnd=98437362  WM_GETICON big=-1904672629 small=-1444084497  class HICON=65581 HICONSM=-196862639
+结论: 系统已挂上图标 ✓
