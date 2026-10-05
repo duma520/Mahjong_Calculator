@@ -27,11 +27,15 @@
    单独跑服务时用 `--anon web,score` 指定（`--anon none` = 全部要口令）。
 
 ★ Web 版界面布局与桌面版一致（v2.4.4，改 Web 布局请先看桌面版怎么排）：
-    ① 牌选择区（索 / 筒 / 万 / 字牌 四行，点一下加一张、长按或右键减一张）
-    ② 模式行（立牌/吃/碰/明杠/暗杠 + 重置；重置 = 全部复位）
+    ① 牌选择区（索 / 筒 / 万 / 字牌 四行，点一下加一张、长按或右键减一张；
+       ★ v2.8.0：红色数字只显示「已选张数」，点它不再减牌）
+    ② 模式行（立牌/吃/碰/明杠/暗杠 + 重置；重置 = 全部复位；
+       ★ v2.8.0：再点一次当前模式按钮 = 取消该模式，回到「立牌」）
     ③ 选项区固定四行：□自摸 □和绝张 □抢杠和/杠上开花 □海底捞月/妙手回春 ／
        风圈 ／ 风位 ／ 花牌（8 张小图 + 「N 张」；花牌**不在牌池里**）
     ④ 已选牌（副露 / 立牌 / 和张 / 花牌 + 提示行）→ ⑤ 听牌候选 → ⑥ 算番结果
+       ★ v2.8.1：**已选牌这一整块都能点掉**，不必整手「重置」—— 点副露任意一张（含暗杠牌背）
+       ＝撤销那一组吃/碰/杠；点立牌一张＝减一张；点和张＝取消和张；点花牌行一张＝取消那张花牌。
 
 接口一览（全部返回 JSON，UTF-8；错误返回 {"ok":false,"error":"..."}）
     GET  /                ★ Web 版算番器（手机/平板/电脑浏览器直接打开就能算番）
@@ -351,10 +355,10 @@ WEB_CLIENT = r"""<!doctype html>
 <title>__APP__ · Web 版</title>
 <style>
 :root{--blue:#2f7ff0;--bg:#f4f6fa;--card:#fff;--line:#dde3ec;--grey:#6b7684;--red:#e74c3c;
- /* ★ v2.7.0 牌尺寸全部改成变量：这组默认值 = 「经典（固定尺寸）」布局，
+ /* ★ v2.7.0 牌尺寸全部改成变量：这组默认值 = 「布局：38px（默认）」，
     与老版本逐个像素一致（38/52、34/46、28/38、间距 3/4）；
-    「自适应」及更大的 3 档（大/更大/最大）由 JS 按屏幕大小改写这些变量
-    （body.auto）——大小档共存，切回经典不会把老布局改坏 */
+    ★ v2.8.4 起其余档位由 JS 按 W/38 **等比缩放这 12 个值**（不再看屏幕），
+    选「38px（默认）」时清掉内联变量回到这里 ⇒ 老布局一个像素都不差 */
  --tw:38px;--th:52px;--pw:34px;--ph:46px;
  --gw:4px;--pgap:3px;
  --fw:34px;--fh:46px;--fwi:28px;--fhi:38px;
@@ -403,6 +407,11 @@ button:active{transform:translateY(1px)}
 /* ★ v2.7.9：页面不足一屏时「跳转」按钮置灰；被跳转到的区块闪一下边框作为反馈 */
 button:disabled{opacity:.45;cursor:default}
 .card.flash{outline:2px solid var(--blue);outline-offset:2px}
+/* ★ v2.8.3：「布局」「按键」是下拉框（原来是一圈圈循环的按钮，选起来费劲）——
+   跟 button 同一套尺寸变量，所以「按键」档位一变它也一起变 */
+select{font:inherit;font-size:var(--btn-fs);border:1px solid var(--line);background:#fff;
+ border-radius:8px;padding:var(--btn-pad-y) var(--btn-pad-x);cursor:pointer;max-width:46vw}
+.selwrap{display:inline-flex;align-items:center;gap:4px;color:var(--grey);font-size:var(--btn-fs)}
 .mod{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
 .pool{margin:0 0 8px}
 .pool .line{display:flex;gap:3px;flex-wrap:wrap}
@@ -411,11 +420,11 @@ button:disabled{opacity:.45;cursor:default}
  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
 .tile img{width:calc(var(--tw) - 6px);height:calc(var(--th) - 8px);pointer-events:none}
 .tile.sel{border-color:var(--blue);background:#eaf2ff}
+/* ★ v2.8.0：红色数字只显示「已选张数」，不再可点 —— pointer-events:none 让点击落到牌上。
+   以前它是「−1」减牌按钮，但红圈太像删除键，误触一下手牌就少一张，所以这个操作已取消。 */
 .tile .cnt{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;
  background:var(--red);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center;
- padding:0 3px;cursor:pointer;pointer-events:auto;box-shadow:0 0 0 2px #fff}
-/* ★ 手机没有右键：红色数字就是「−1」按钮（点它减一张） */
-.tile .cnt:active{transform:scale(.9)}
+ padding:0 3px;pointer-events:none;box-shadow:0 0 0 2px #fff}
 .tiles img.clk{cursor:pointer}
 .tiles img.clk:active{opacity:.55}
 .tile .cnt.hide{display:none}
@@ -444,7 +453,7 @@ footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px sol
 <main>
   <!-- ① 牌选择区（与桌面版一致：索 / 筒 / 万 / 字牌 四行） -->
   <div class="card" id="c_pool">
-    <h2>牌选择区（点一下加一张；点牌上红色数字 −1）</h2>
+    <h2>牌选择区（点一下加一张；减牌请在下面「已选牌」里点一张）</h2>
     <div class="pool" id="pool"></div>
   </div>
 
@@ -453,8 +462,10 @@ footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px sol
     <div class="mod" id="modes"></div>
     <div class="btns" style="margin-top:8px">
       <button class="warn" onclick="resetAll()">重置</button>
-      <button id="lybtn" onclick="cycleLayout()">布局：经典（1/5）</button>
-      <button id="szbtn" onclick="cycleBtnSize()">按钮：最小（1/5）</button>
+      <!-- ★ v2.8.3：布局 / 按键改成**下拉框**（点一下直接选，不用一圈圈循环），
+           选项文字里直接写清是多少 px（布局＝牌宽，按键＝字号） -->
+      <span class="selwrap">布局：<select id="lysel" onchange="setLayout(this.value)"></select></span>
+      <span class="selwrap">按键：<select id="szsel" onchange="applyBtnSize(this.value)"></select></span>
       <button id="btn_debug" style="__SHOW_DEBUG__" onclick="window.open('/debug','_blank')">接口自测页</button>
       <button id="btn_token" style="__SHOW_TOKEN__" onclick="setToken()">换口令</button>
     </div>
@@ -493,7 +504,9 @@ footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px sol
     <div class="tip" id="msg"></div>
     <div class="tags" id="fans"></div>
     <div class="tip" style="margin-top:6px">
-      手机：点牌加一张，点牌上的<b>红色数字</b>减一张（也可以在「立牌」里点一张减）。
+      手机：点牌加一张；<b>点错了不用「重置」</b>，「已选牌」里那一块都能点掉 ——
+      点<b>立牌</b>一张减一张、点<b>副露</b>一张撤销那一组（吃/碰/杠）、点<b>和张</b>取消和张、
+      点<b>花牌</b>行取消那张（牌上的红色数字只是「已选张数」，点它不再减牌）。
       立牌满 13 张（有副露时 13 − 3×副露数）会自动列出听牌；点牌池里的牌或候选牌即可出结果。
     </div>
   </div>
@@ -547,66 +560,94 @@ async function api(path,body){
   return j;
 }
 function el(id){return document.getElementById(id);}
-/* ---------- 布局（★ v2.7.0 经典/自适应；★ v2.7.8 改成 5 档循环） ----------
-   1 经典（默认，＝升级前的固定尺寸，CSS 变量默认值就是它）
-   2 自适应（按屏幕宽高算尺寸，手机上不会过大、平板上不会过小）
-   3 大 / 4 更大 / 5 最大 ＝「自适应」算出的基准再乘 1.2 / 1.4 / 1.6
-   （牌池是 flex-wrap，放大到一行放不下会自动换行，不会溢出）
-   选择记在 localStorage（mj_layout2，存档位索引），刷新/切页都保留 */
-const LAYOUT_KEY="mj_layout2";   /* ★ 换键名：老键 mj_layout 只有 fixed/auto 两个值 */
-const LAYOUT_LEVELS=[
-  {name:"经典",  key:"fixed",scale:0},     /* ★ 第 1 档＝默认＝与升级前逐像素一致 */
-  {name:"自适应",key:"auto", scale:1},
-  {name:"大",    key:"auto", scale:1.2},
-  {name:"更大",  key:"auto", scale:1.4},
-  {name:"最大",  key:"auto", scale:1.6},
-];
-const LAYOUT_DEFAULT=0;
-const LAYOUT_SCALE_MAX=96;               /* 只做安全兜底，正常在 46~74 之间 */
+/* ---------- 布局（★ v2.7.0 起是 CSS 变量；★ v2.8.4 起＝**精确 px 档位**，28~80 每 2px） ----------
+   用户要求（v2.8.4）：「布局：38px（默认），其他只写多少px；从 38px 起每减 2px 一档到 28px，
+   每加 2px 一档到 80px」⇒ **28 / 30 / … / 80 共 27 档**，默认 38px。
+   档位数字＝**牌池一张牌有多宽**（CSS 的 `--tw`）；其余 11 个尺寸变量按 38px 时的原值
+   **等比缩放**（牌间距、已选牌行、花牌、候选牌一起缩），所以整块版面比例不变。
+   ★ 「38px（默认）」这一档＝**清掉内联变量、回落 CSS 原值** ⇒ 与升级前逐个像素一致。
+   ★ 尺寸不再跟屏幕走（原来「自适应」那档按屏幕算）—— 手机觉得大的话直接选小几档即可；
+     牌池仍是 flex-wrap，放不下会自动换行，不会溢出。
+   选择记在 localStorage（mj_layout4，存**档位下标**），刷新/切页都保留 */
+const LAYOUT_PX_MIN=28, LAYOUT_PX_STEP=2, LAYOUT_PX_MAX=80, LAYOUT_PX_DEFAULT=38;
+const LAYOUT_LEVELS=(()=>{const a=[];for(let p=LAYOUT_PX_MIN;p<=LAYOUT_PX_MAX;p+=LAYOUT_PX_STEP){a.push(p);}return a;})();
+const LAYOUT_DEFAULT=(LAYOUT_PX_DEFAULT-LAYOUT_PX_MIN)/LAYOUT_PX_STEP;   /* 38px 落在下标 5 */
+const LAYOUT_KEY="mj_layout4";   /* ★ v2.8.4 再换键名：档位表从「7 个名字档」变成「27 个 px 档」，
+                                    下标含义完全不同（老键 mj_layout3 的 2＝经典，这里 2＝32px），不再读 */
+/* 38px 这一档在 CSS 里的原值（其余档＝按 W/38 等比缩放）—— 改 CSS 的这组默认值要同步改这里 */
+const LAYOUT_BASE={"--tw":38,"--th":52,"--pw":34,"--ph":46,"--gw":4,"--pgap":3,
+                   "--fw":34,"--fh":46,"--fwi":28,"--fhi":38,"--ww":28,"--wh":38};
+const LAYOUT_VARS=Object.keys(LAYOUT_BASE);
+const LAYOUT_TIP="布局：一张牌多宽（px）。默认 38px；往小每 2px 一档到 28px，"
+  +"往大每 2px 一档到 80px，共 "+LAYOUT_LEVELS.length+" 档。只改牌的大小，不影响算番。";
+const BTN_TIP="按键大小：字号 px。默认 15px；往小每 2px 到 11px、往大每 2px 到 23px。"
+  +"模式行 / 重置 / 两个下拉框 / 选项 / 风圈风位 / 底部按钮一起变。";
 let LAYOUT_IDX=LAYOUT_DEFAULT;
-const LAYOUT_VARS=["--tw","--th","--pw","--ph","--gw","--pgap",
-                   "--fw","--fh","--fwi","--fhi","--ww","--wh"];
 function loadLayout(){
   try{const v=parseInt(localStorage.getItem(LAYOUT_KEY),10);
       if(v>=0&&v<LAYOUT_LEVELS.length)return v;}catch(e){}
   return LAYOUT_DEFAULT;
 }
-function layoutLevel(){return LAYOUT_LEVELS[LAYOUT_IDX];}
-function layoutName(){return layoutLevel().name;}
+function layoutPx(){return LAYOUT_LEVELS[LAYOUT_IDX];}
+function layoutLabel(p,i){return (i===LAYOUT_DEFAULT)?(p+"px（默认）"):(p+"px");}
+function fillLayoutOptions(){
+  const s=el("lysel");
+  if(!s)return;
+  if(s.options.length!==LAYOUT_LEVELS.length){
+    s.innerHTML=LAYOUT_LEVELS.map((_,i)=>'<option value="'+i+'"></option>').join("");
+  }
+  LAYOUT_LEVELS.forEach((p,i)=>{         /* 只改文字，不重建（重建会把当前选中/展开的列表打断） */
+    s.options[i].value=String(i);
+    s.options[i].textContent=layoutLabel(p,i);   /* ★ 用户要求：只有默认档写「（默认）」，其余只写 px */
+  });
+  s.value=String(LAYOUT_IDX);
+  s.title=LAYOUT_TIP;
+}
 function setLayout(idx,remember){
   LAYOUT_IDX=Math.max(0,Math.min(LAYOUT_LEVELS.length-1,idx|0));
-  const L=layoutLevel();
-  S.layout=L.key;
-  document.body.classList.toggle("auto",L.key==="auto");
-  const b=el("lybtn");
-  if(b){b.textContent="布局："+L.name+"（"+(LAYOUT_IDX+1)+"/"+LAYOUT_LEVELS.length+"）";
-        b.title="布局档位：经典（默认，＝升级前的固定尺寸）/ 自适应（按屏幕算）/ "
-               +"大 / 更大 / 最大（＝自适应再放大 1.2 / 1.4 / 1.6 倍）；点一下换下一档。当前："+L.name;
-        b.classList.toggle("on",LAYOUT_IDX!==LAYOUT_DEFAULT);}
+  S.layout=layoutPx();                   /* 只作状态记录/调试用 */
   autoSize();
+  fillLayoutOptions();
   if(remember!==false){try{localStorage.setItem(LAYOUT_KEY,String(LAYOUT_IDX));}catch(e){}}
 }
-function cycleLayout(){setLayout((LAYOUT_IDX+1)%LAYOUT_LEVELS.length);}
-/* ---------- 按钮尺寸（★ v2.7.6：客户端「按钮：…」多档；★ v2.7.7：默认＝最小档，只往大变） ----------
-   用户要求：默认就是现在的大小（也就是最小档），后面一级级往大调，分 5 档看看哪一级顺手。
+/* ---------- 按键尺寸（★ v2.7.6 多档；★ v2.7.7 默认＝最小档；★ v2.8.2 补两个更小的档；
+                 ★ v2.8.3 按钮 → 下拉框，选项里直接写清多少 px） ----------
+   用户要求：默认＝现在的大小，再往大 4 档、往小 2 档（v2.8.2），一级级调看哪级顺手。
    只改 3 个 CSS 变量（--btn-fs / --btn-pad-y / --btn-pad-x）——
-   模式行（立牌/吃/碰/明杠/暗杠）、重置、布局、本按钮、选项勾选、风圈/风位、
+   模式行（立牌/吃/碰/明杠/暗杠）、重置、布局与按键两个下拉框、选项勾选、风圈/风位、
    底部 ↑↓、弹窗按钮 一次全跟着变。
-   ★ 第 1 档（默认）＝**清掉内联变量、回落 CSS 默认值** ⇒ 与升级前逐像素一致 */
-const BTN_KEY="mj_btnsize2";   /* ★ v2.7.7 换了键名：老键 mj_btnsize 是「含更小档」那套，语义已变，不再读 */
+   ★ 默认档（下标 BTN_DEFAULT）＝**清掉内联变量、回落 CSS 默认值** ⇒ 与升级前逐像素一致 */
+const BTN_KEY="mj_btnsize3";   /* ★ v2.8.2 换键名：档位表变了（默认档由下标 0 变 2），
+                                  老键 mj_btnsize2 存的下标含义已不同，不再读 */
 const BTN_LEVELS=[
-  {name:"最小",fs:15,py:7, px:11},   /* ★ 第 1 档＝默认＝与升级前一模一样，别改这行 */
+  {name:"极小",fs:11,py:3, px:5},    /* ★ v2.8.2：比「最小」小两档 */
+  {name:"更小",fs:13,py:5, px:8},
+  {name:"最小",fs:15,py:7, px:11},   /* ★ 默认档＝与升级前一模一样，别改这行（下标＝BTN_DEFAULT） */
   {name:"大",  fs:17,py:9, px:14},
   {name:"更大",fs:19,py:11,px:17},
   {name:"很大",fs:21,py:13,px:20},
   {name:"最大",fs:23,py:15,px:23},
 ];
-const BTN_DEFAULT=0;                   /* 第 1 档＝默认（＝最小，＝升级前的大小） */
+const BTN_DEFAULT=2;                   /* ★ v2.8.2：默认仍是「最小」（＝升级前的大小），下标由 0 变 2 */
 let BTN_IDX=BTN_DEFAULT;
 function loadBtnSize(){
   try{const v=parseInt(localStorage.getItem(BTN_KEY),10);
       if(v>=0&&v<BTN_LEVELS.length)return v;}catch(e){}
   return BTN_DEFAULT;
+}
+/* ★ v2.8.3：下拉框各档的 px ＝字号（与 CSS 变量同一口径，所以「按键：15px」就是实际字号） */
+function fillBtnOptions(){
+  const s=el("szsel");
+  if(!s)return;
+  if(s.options.length!==BTN_LEVELS.length){
+    s.innerHTML=BTN_LEVELS.map((_,i)=>'<option value="'+i+'"></option>').join("");
+  }
+  BTN_LEVELS.forEach((L,i)=>{
+    s.options[i].value=String(i);
+    s.options[i].textContent=(i===BTN_DEFAULT)?(L.fs+"px（默认）"):(L.fs+"px");  /* 同布局：只默认档写「（默认）」 */
+  });
+  s.value=String(BTN_IDX);
+  s.title=BTN_TIP;
 }
 function applyBtnSize(idx,remember){
   BTN_IDX=Math.max(0,Math.min(BTN_LEVELS.length-1,idx|0));
@@ -619,48 +660,25 @@ function applyBtnSize(idx,remember){
     root.style.setProperty("--btn-pad-y",L.py+"px");
     root.style.setProperty("--btn-pad-x",L.px+"px");
   }
-  const b=el("szbtn");
-  if(b){b.textContent="按钮："+L.name+"（"+(BTN_IDX+1)+"/"+BTN_LEVELS.length+"）";
-        b.title="按钮大小（模式行/选项/风圈风位一起变）：最小（默认）/ 大 / 更大 / 很大 / 最大；"
-               +"点一下换下一档（只往大变，回到最小就一圈循环回来）。当前："+L.name;
-        b.classList.toggle("on",BTN_IDX!==BTN_DEFAULT);}
+  fillBtnOptions();
   if(remember!==false){try{localStorage.setItem(BTN_KEY,String(BTN_IDX));}catch(e){}}
 }
-function cycleBtnSize(){applyBtnSize((BTN_IDX+1)%BTN_LEVELS.length);}
+/* ★ v2.8.4：尺寸＝**直接按档位 px 等比缩放**（不再看屏幕）——
+   默认 38px 那一档清掉内联变量、回落 CSS 原值 ⇒ 与升级前逐像素一致；
+   其余档按 W/38 缩放全部 12 个变量（`--tw` 缩完正好＝W，所以下拉框里写的 px 就是牌的实际宽度）。 */
 function autoSize(){
   const root=document.documentElement;
-  const L=layoutLevel();
-  if(L.key!=="auto"||!L.scale){           /* 经典：清掉 JS 写的值，回到 CSS 默认（老样子） */
+  const W=layoutPx();
+  if(W===LAYOUT_PX_DEFAULT){             /* 默认档：回到 CSS 原值（老样子，一个像素都不差） */
     LAYOUT_VARS.forEach(k=>root.style.removeProperty(k));
     return;
   }
-  const vw=Math.min(document.documentElement.clientWidth||360,760);
-  const avail=Math.max(220,vw-42);        /* main 10+10 + card 8+8 + 滚动条余量 */
-  const pgap=vw<380?2:3;
-  const nine=(avail-pgap*8-4)/9;          /* 一行 9 张（筒/索/万） */
-  const vh=window.innerHeight||640;
-  const byH=Math.min(vh*0.115,74);        /* 牌池 4 行，不能把屏占满 */
-  let base=Math.floor(Math.min(nine,byH/1.364));
-  base=Math.max(20,Math.min(base,46));    /* ★ 自适应基准：与 v2.7.0 的自适应完全一致 */
-  let w=Math.round(base*L.scale);         /* ★ v2.7.8：3~5 档＝在基准上再放大 */
-  w=Math.max(20,Math.min(w,LAYOUT_SCALE_MAX));
-  const h=Math.round(w*1.364);
-  root.style.setProperty("--pw",w+"px");
-  root.style.setProperty("--ph",h+"px");
-  root.style.setProperty("--tw",(w+6)+"px");
-  root.style.setProperty("--th",(h+8)+"px");
-  root.style.setProperty("--gw",Math.max(2,Math.round(w/9))+"px");
-  root.style.setProperty("--pgap",pgap+"px");
-  const fw=Math.round(w*0.9),fh=Math.round(h*0.9);
-  root.style.setProperty("--fw",(fw+6)+"px");
-  root.style.setProperty("--fh",(fh+8)+"px");
-  root.style.setProperty("--fwi",fw+"px");
-  root.style.setProperty("--fhi",fh+"px");
-  root.style.setProperty("--ww",Math.round(w*0.83)+"px");
-  root.style.setProperty("--wh",Math.round(h*0.83)+"px");
+  const f=W/LAYOUT_PX_DEFAULT;           /* 等比缩放；--tw 缩完＝round(38*f)＝＝W */
+  LAYOUT_VARS.forEach(k=>root.style.setProperty(k,Math.max(1,Math.round(LAYOUT_BASE[k]*f))+"px"));
 }
 let asTimer=null;
-function autoSizeLater(){clearTimeout(asTimer);asTimer=setTimeout(()=>{autoSize();updateJumpBtns();},120);}
+function autoSizeLater(){clearTimeout(asTimer);asTimer=setTimeout(()=>{
+  autoSize();updateJumpBtns();},120);}   /* 尺寸是固定 px，不再随屏幕变；resize 只需重算跳转按钮 */
 window.addEventListener("resize",autoSizeLater);
 window.addEventListener("orientationchange",autoSizeLater);
 /* ★ v2.7.9：底部两个「跳转」按钮——滚到牌池 / 结果**区块**并闪一下边框。
@@ -687,16 +705,19 @@ function updateJumpBtns(){
 /* ★ v2.5.0：图片地址也用 q() 带上口令 —— 这样即使「Web 客户端」被设成要口令，
    用 http://ip:端口/?token=xxx 打开页面时牌面图照样能加载（不会一片碎图） */
 function img(code){return '<img src="'+q("/tiles/"+code+".png")+'" alt="'+code+'" title="'+(NAMES[code]||"")+'">';}
-/* 已选牌也可点：手机/平板没有右键，点一下就是减一张（桌面鼠标同样好用） */
-function imgClk(code){return '<img class="clk" onclick="minus(\''+code+'\')" src="'+
+/* 已选牌也可点：手机/平板没有右键，点一下就是减一张（桌面鼠标同样好用）。
+   ★ v2.8.1：fn 指定点击时调用的函数（默认 minus；花牌行用 toggleFlower） */
+function imgClk(code,fn){return '<img class="clk" onclick="'+(fn||"minus")+'(\''+code+'\')" src="'+
   q("/tiles/"+code+".png")+'" alt="'+code+'" title="点上一下可减一张">';}
-function mkTiles(box,codes,emptyText,clickable){
-  box.innerHTML = codes.length? codes.map(c=>clickable?imgClk(c):img(c)).join("")
+function mkTiles(box,codes,emptyText,clickable,fn){
+  box.innerHTML = codes.length? codes.map(c=>clickable?imgClk(c,fn):img(c)).join("")
     : '<div class="empty">'+(emptyText||"（空）")+'</div>';
 }
 /* ★ 副露渲染（与桌面版一致，v2.7.1 修）：
    明杠 / 碰 / 吃 = 全部正面；**暗杠 = 面·背·背·面**（中间两张用 empty.png 牌背）；
-   不同副露之间留一段间隔（桌面版用 GAP 哨兵，这里用 .meldgap） */
+   不同副露之间留一段间隔（桌面版用 GAP 哨兵，这里用 .meldgap）。
+   ★ v2.8.1：每一张都能点（**含暗杠的牌背**）＝**撤销那一组吃/碰/杠** ——
+   点错牌不用整手「重置」，点一下那一组就没了（与桌面版 v2.7.2 同口径）。 */
 function meldHtml(){
   if(!S.melds.length)return '<div class="empty">（暂无吃碰杠）</div>';
   return S.melds.map((m,i)=>{
@@ -706,10 +727,19 @@ function meldHtml(){
       codes=[t[0],"empty","empty",t[3]];          /* 面·背·背·面 */
     }
     const body=codes.map(c=>c==="empty"
-      ? '<img src="'+q("/tiles/empty.png")+'" alt="暗杠" title="暗杠（中间两张显示牌背）">'
-      : img(c)).join("");
+      ? '<img class="clk" onclick="removeMeld('+i+')" src="'+q("/tiles/empty.png")+'" alt="暗杠" title="暗杠（点一下撤销这一组）">'
+      : '<img class="clk" onclick="removeMeld('+i+')" src="'+q("/tiles/"+c+".png")+'" alt="'+c+'" title="点一下撤销这一组吃碰杠">'
+    ).join("");
     return (i?'<span class="meldgap"></span>':'')+body;
   }).join("");
+}
+/* ★ v2.8.1：点副露里的任意一张＝撤销那一组（不必整手「重置」） */
+function removeMeld(gi){
+  const i=+gi;
+  if(!(i>=0&&i<S.melds.length))return;
+  S.melds.splice(i,1);
+  S.win=null;                /* 副露变了，和张要重新指定（与桌面版一致） */
+  render();
 }
 
 /* ---------- 请求体 ---------- */
@@ -803,7 +833,8 @@ function resetAll(){/* ★ 全部重置（与桌面版一致） */
           round:"东",seat:"东"};
   render();
 }
-/* 减一张（★ 手机友好入口：牌上的红色数字 / 「已选牌→立牌」里点一张） */
+/* 减一张（★ 手机友好入口：「已选牌」的立牌 / 和张行里点一张；
+   v2.8.0 起牌池上的红色数字不再可点） */
 function minus(code){
   if(S.mode=="chi"&&S.pending.length){S.pending.pop();render();return;}
   if(S.win===code){S.win=null;render();return;}
@@ -819,7 +850,9 @@ function toggleFlower(code){
   S.flowers=FLOWER.filter(c=>S.flowers.includes(c));   /* 固定顺序（春夏秋冬梅兰竹菊），与桌面版一致 */
   render();
 }
-function setMode(m){S.mode=m;S.pending=[];render();}
+function setMode(m){/* ★ v2.8.0：再点一次当前模式按钮＝取消该模式，回到「立牌」 */
+  if(m!=="stand"&&S.mode===m)m="stand";
+  S.mode=m;S.pending=[];render();}
 function toggleOpt(k){S.opts[k]=!S.opts[k];
   if(k==="tsumo"){S.opts.special_a=false;S.opts.special_b=false;}
   render();}
@@ -836,7 +869,7 @@ function render(){
   el("m_melds").innerHTML=meldHtml();      /* ★ 副露：暗杠要显示为 面·背·背·面 */
   mkTiles(el("m_hand"),concealedList(),"（请在牌池点牌）",true);   /* 点一张 = 减一张 */
   mkTiles(el("m_win"),S.win?[S.win]:[],"（未指定）",true);
-  mkTiles(el("m_flower"),S.flowers,"（未选花牌）");
+  mkTiles(el("m_flower"),S.flowers,"（未选花牌）",true,"toggleFlower");  /* ★ v2.8.1：点一张＝取消这张花牌 */
   el("hint").textContent=baseHint();
 
   /* 模式 */
@@ -881,21 +914,13 @@ let POOL_BUILT=false;
 function buildPool(){
   el("pool").innerHTML=POOL.map(row=>'<div class="line">'+row.map(code=>
     '<div class="tile" data-code="'+code+'">'+img(code)+
-    '<div class="cnt hide" data-minus="'+code+'"></div></div>').join("")+'</div>').join("");
+    '<div class="cnt hide"></div></div>').join("")+'</div>').join("");
   bindPool();
-  bindMinus();
   POOL_BUILT=true;
 }
-/* ★ 红色角标 = 「−1」按钮：单独绑定并把事件截住，不让它冒泡成「加一张」 */
-function bindMinus(){
-  document.querySelectorAll("#pool .cnt").forEach(node=>{
-    const code=node.dataset.minus;
-    const stop=e=>{e.stopPropagation();};
-    ["mousedown","mouseup","click","touchstart","touchend","contextmenu"]
-      .forEach(ev=>node.addEventListener(ev,stop));
-    node.addEventListener("click",e=>{e.stopPropagation();minus(code);});
-  });
-}
+/* ★ v2.8.0：红色角标不再绑定任何事件（只显示张数）——
+   以前它是「−1」减牌按钮，红圈太像删除键、容易误触；现在点它＝点这张牌（加一张）。
+   CSS 里 .cnt 已设 pointer-events:none，事件自然落到 .tile 上。 */
 function updatePool(){
   if(!POOL_BUILT){buildPool();return;}
   document.querySelectorAll("#pool .tile").forEach(node=>{
@@ -988,8 +1013,8 @@ function loadToken(){
 /* ---------- 启动 ---------- */
 (async function(){
   loadToken();
-  setLayout(loadLayout(),false);       /* ★ v2.7.8 恢复上次选的布局档位（默认第 1 档＝经典） */
-  applyBtnSize(loadBtnSize(),false);   /* ★ v2.7.6 恢复上次的按钮大小（默认第 1 档＝最小＝老样子） */
+  setLayout(loadLayout(),false);       /* ★ v2.7.8 恢复上次选的布局档位（默认「经典」）；内部会填下拉框 */
+  applyBtnSize(loadBtnSize(),false);   /* ★ v2.7.6 恢复上次的按键大小（默认「最小」＝老样子）；内部会填下拉框 */
   updateJumpBtns();                    /* ★ v2.7.9 底部跳转按钮：没得滚就置灰 */
   try{
     const h=await api("/api/health");

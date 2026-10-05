@@ -15,14 +15,18 @@
 交互（按《软件设计构图》实现）
     · 牌选择区四行：索 / 筒 / 万 / 字牌。左键点一下加一张（最多 4 张），右键减一张。
       ★ **不用右键也能减牌**（v2.7.2，手机/触屏一样好使）：
-        ① 点牌上那个**红色数字角标**＝减一张（与 Web 端的「点红色数字 −1」一致）；
-        ② 下面「已选牌」区里**点某一张牌＝取消这一张**：副露里点一张＝撤销那一组副露，
-           「和张」点一下＝取消和张，「花牌」行点一张＝取消那张花牌。
+        下面「已选牌」区里**点某一张牌＝取消这一张**：副露里点一张＝撤销那一组副露，
+        「和张」点一下＝取消和张，「花牌」行点一张＝取消那张花牌。
+      ★ **红色数字角标只显示「已选张数」，点它不再减牌**（v2.8.0）：
+        红圈看着像删除按钮，误触一下手牌就少一张，所以取消了这个操作；
+        角标对鼠标透明，点在上面等于点这张牌（正常加一张），不会出现「点了没反应」。
       ★ 牌与牌之间只留 4px（v2.4.2）：牌是固定尺寸，多余宽度靠 `setColumnStretch(空列, 1)`
         全部让给右侧空白，不要在 grid 上直接铺开（否则 9 列被均匀撑宽、缝隙很大）。
     · 立牌 = 手上其他牌（默认模式）；吃 / 碰 / 明杠 / 暗杠 都是「先点按钮，再选牌」：
         碰·明杠·暗杠 —— 点一次牌即成立；
         吃 —— 依次点出 3 张相连的牌后成立。
+      ★ 点错了不要紧（v2.8.0）：**再点一次同一个按钮＝取消该模式**，回到「立牌」；
+        已经做成的副露也能单独撤销 —— 在「副露」行**点那一组任意一张**（含暗杠牌背）即可（v2.7.2）。
     · 暗杠显示为「面·背·背·面」，中间两张用 empty.png。
     · 自摸勾选后，后面两个复选框变成 杠上开花 / 妙手回春；
       未勾选时为 抢杠和 / 海底捞月。
@@ -56,12 +60,13 @@ Web 版（给手机/平板**浏览器**用；★ 不是给程序调用的接口�
     - ★ Web 端的**界面布局与桌面版一致**（v2.4.4）：牌选择区（索/筒/万/字牌四行）→ 模式行（+重置）
       → 选项区四行（□选项 / 风圈 / 风位 / 花牌 8 张小图 + 「N 张」）→ 已选牌 → 听牌候选 → 算番结果。
       花牌**不在牌池里**（跟桌面版一样放选项区第四行）；「重置」也是全部复位。
-    - ★ Web 端是**给手机/平板用的**（v2.4.6）：手机没有右键，所以减牌入口改成
-      「点牌上的红色数字 −1」＋「在『已选牌→立牌』里点一张减一张」；
-      长按/右键减牌仍保留给鼠标，并禁掉了长按系统菜单与文本选择
-      （`-webkit-touch-callout:none; user-select:none`）。
-    - ★ **桌面版也照这个来**（v2.7.2）：牌选择区的红角标点一下就 −1，「已选牌」区
-      （副露 / 立牌 / 和张 / 花牌）里点某一张＝取消这一张；右键仍然可用，不影响鼠标习惯。
+    - ★ Web 端是**给手机/平板用的**（v2.4.6）：手机没有右键，所以减牌入口是
+      「在『已选牌→立牌』里点一张减一张」；长按/右键减牌仍保留给鼠标，
+      并禁掉了长按系统菜单与文本选择（`-webkit-touch-callout:none; user-select:none`）。
+    - ★ **桌面版也照这个来**（v2.7.2）：「已选牌」区（副露 / 立牌 / 和张 / 花牌）里
+      点某一张＝取消这一张；右键仍然可用，不影响鼠标习惯。
+    - ★ **红色数字角标不再可点**（v2.8.0，桌面版与 Web 版同步）：它只是「已选张数」
+      的显示；红圈像删除按钮，误触一下就少一张牌，所以这个减牌操作已取消。
     - ★ **牌尺寸两套布局共存**（v2.7.0）：默认仍是「经典」（固定尺寸，与老版本逐像素一致），
       点模式行里的「布局：经典」可在 **经典 ⇄ 自适应** 之间切（选择记在 localStorage `mj_layout`）。
       自适应按屏幕宽高算牌尺寸（一行 9 张不超宽 + 高度上限，夹在 20~46px）——
@@ -116,7 +121,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QStackedWidget, QTextBrowser, QToolButton, QVBoxLayout, QWidget,
 )
 
-__version__ = "2.7.9"
+__version__ = "2.8.4"
 APP_NAME = "国标麻将算番器"                 # 中文名（界面显示，保持不变）
 APP_NAME_EN = "Mahjong_Calculator"        # ★ v2.7.3 英文名：文件名 / exe / 打包目录统一用它
 SETTINGS_FILE = "mahjong_settings.json"
@@ -132,6 +137,12 @@ POOL_ROWS = [
     ["W%d" % i for i in range(1, 10)],
     ["F1", "F2", "F3", "F4", "J1", "J2", "J3"],
 ]
+
+# 模式按钮（同序）：键 ↔ 按钮 id 互转。
+# ★ v2.8.0：选中「吃 / 碰 / 明杠 / 暗杠」后，**再点一次同一个按钮＝取消该模式**（回到「立牌」）。
+MODE_KEYS = ["stand", "chi", "peng", "minggang", "angang"]
+MODE_TEXTS = {"stand": "立牌", "chi": "吃", "peng": "碰",
+              "minggang": "明杠", "angang": "暗杠"}
 
 POOL_SIZE = QSize(48, 65)
 HAND_SIZE = QSize(36, 49)
@@ -355,30 +366,24 @@ def clear_layout(layout) -> None:
 
 
 class CountBadge(QLabel):
-    """牌选择区的「已选张数」红角标
+    """牌选择区的「已选张数」红角标（★ v2.8.0 起**只显示张数，不再能点**）
 
-    ★ v2.7.2：**点一下＝减一张**（手机/触屏没有右键，右键只能算鼠标用户的便利）。
-    尺寸比 v2.7.1 略放大（16→20），手指才好点中。
+    v2.7.2 曾让红角标「点一下＝减一张」，但红圈看着像删除按钮，太容易误触
+    （想加牌却点掉一张）。现在角标纯做计数显示：减牌请**右键**，或在下面
+    「已选牌」区点某一张牌取消。角标对鼠标事件透明，所以点在它上面＝点在
+    这张牌上（左键加一张），不会留下「点了没反应」的死角。
     """
-
-    clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAlignment(Qt.AlignCenter)
         self.setFixedSize(20, 20)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("点一下减一张（等于右键）")
+        self.setToolTip("已选张数（减牌：右键，或在下面「已选牌」里点一张）")
         self.setStyleSheet(
             "background:#e74c3c;color:#fff;border-radius:10px;font-size:11px;"
             "font-weight:bold;")
-
-    def mousePressEvent(self, event):     # noqa: N802
-        if event.button() == Qt.LeftButton:
-            self.clicked.emit()
-            event.accept()           # 吃掉事件，不要传给底下的牌按钮（否则又加一张）
-            return
-        super().mousePressEvent(event)
+        # ★ v2.8.0：角标只是装饰，别拦住底下牌按钮的点击（也避免误触减牌）
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
 
 class ClickTile(QLabel):
@@ -437,17 +442,12 @@ class TileButton(QToolButton):
             except Exception:       # noqa: BLE001
                 pass
         self._count = 0
-        # ★ v2.7.2：角标改成可点（点一下减一张 —— 手机/触屏没有右键）
+        # ★ v2.8.0：角标只显示张数（不可点，避免误触减牌）
         self.badge = CountBadge(self)
         self.badge.move(self.width() - self.badge.width() - 1, 1)
-        self.badge.clicked.connect(self._on_badge_clicked)
         self.badge.hide()
         self.clicked.connect(lambda: self.leftClicked.emit(self.code))
         self._apply_style()
-
-    def _on_badge_clicked(self) -> None:
-        """点红角标＝减一张（与 Web 端「点红色数字 −1」一致）"""
-        self.rightClicked.emit(self.code)
 
     # ---- 外观
     def _apply_style(self) -> None:
@@ -533,14 +533,17 @@ HELP_TEXT = """
 <ol>
 <li><b>选牌</b>：上方四行是牌选择区（索 / 筒 / 万 / 字牌）。
 左键点一下加一张，最多四张；<b>右键点一下减一张</b>。</li>
-<li><b>不用右键也能减牌</b>（v2.7.2，手机 / 触屏一样好使）：
-点牌上那个<b>红色数字</b>就是 −1；下面「已选牌」区里<b>点某一张牌也会取消这一张</b>
-（副露里点一张＝撤销那一组，点「和张」＝取消和张，点「花牌」行＝取消那张花牌）。</li>
+<li><b>不用右键也能减牌</b>（手机 / 触屏一样好使）：
+下面「已选牌」区里<b>点某一张牌也会取消这一张</b>
+（副露里点一张＝撤销那一组，点「和张」＝取消和张，点「花牌」行＝取消那张花牌）。
+牌上的<b>红色数字</b>只是「已选张数」，<b>点它不再减牌</b>（点在上面＝点这张牌）。</li>
 <li><b>立牌</b>（默认）：点出来的牌都算「手上其他牌」，即门前的暗手牌。</li>
 <li><b>吃 / 碰 / 明杠 / 暗杠</b>：都是<b>先点按钮，再选牌</b>。
     <ul>
     <li>碰、明杠、暗杠：点一次牌就成立（碰 3 张、杠 4 张自动补齐）。</li>
     <li>吃：依次点出 3 张相连的同花色牌，例如 一萬 / 二萬 / 三萬。</li>
+    <li>点错了、或不想做这一手：<b>再点一次同一个按钮</b>（吃 / 碰 / 明杠 / 暗杠）
+        ＝<b>取消该模式</b>，回到「立牌」。</li>
     </ul>
 </li>
 <li>立牌（含副露折算）<b>选满 13 张</b>后，下面会自动列出<b>听牌候选</b>，
@@ -850,8 +853,8 @@ class MahjongFanWindow(QMainWindow):
 
         # 1) 牌选择区
         box.addWidget(self._section_title("牌选择区",
-                                          "左键加一张；已选的牌点角标 −1，"
-                                          "或点下方已选牌取消"))
+                                          "左键加一张；减牌用右键，"
+                                          "或点下方「已选牌」里的一张取消"))
         pool = QGridLayout()
         pool.setHorizontalSpacing(4)
         pool.setVerticalSpacing(4)
@@ -874,9 +877,8 @@ class MahjongFanWindow(QMainWindow):
         mode_row.addWidget(self._hint_label("模式"))
         self.mode_group = QButtonGroup(self)
         self.mode_group.setExclusive(True)
-        for key, text in (("stand", "立牌"), ("chi", "吃"), ("peng", "碰"),
-                          ("minggang", "明杠"), ("angang", "暗杠")):
-            btn = QPushButton(text)
+        for key in MODE_KEYS:
+            btn = QPushButton(MODE_TEXTS[key])
             btn.setCheckable(True)
             btn.setFocusPolicy(Qt.NoFocus)
             btn.setMinimumHeight(32)
@@ -889,8 +891,7 @@ class MahjongFanWindow(QMainWindow):
                 "QPushButton:checked{background:#2f7ff0;color:#fff;"
                 "border:1px solid #2f7ff0;font-weight:bold;}")
             btn.setToolTip(self._mode_tip(key))
-            self.mode_group.addButton(btn, ("stand", "chi", "peng",
-                                            "minggang", "angang").index(key))
+            self.mode_group.addButton(btn, MODE_KEYS.index(key))
             mode_row.addWidget(btn)
             setattr(self, "btn_mode_" + key, btn)
         self.btn_mode_stand.setChecked(True)
@@ -1113,10 +1114,14 @@ class MahjongFanWindow(QMainWindow):
     def _mode_tip(key: str) -> str:
         return {
             "stand": "立牌：点出的牌作为手上其他牌（门前暗手牌）",
-            "chi": "吃：先点「吃」，再依次点出 3 张相连的同花色牌",
-            "peng": "碰：先点「碰」，再点要碰的牌（自动补足 3 张）",
-            "minggang": "明杠：先点「明杠」，再点要杠的牌（自动补足 4 张）",
-            "angang": "暗杠：先点「暗杠」，再点要杠的牌（自动补足 4 张）",
+            "chi": "吃：先点「吃」，再依次点出 3 张相连的同花色牌；"
+                   "再点一次「吃」＝取消",
+            "peng": "碰：先点「碰」，再点要碰的牌（自动补足 3 张）；"
+                    "再点一次「碰」＝取消",
+            "minggang": "明杠：先点「明杠」，再点要杠的牌（自动补足 4 张）；"
+                        "再点一次「明杠」＝取消",
+            "angang": "暗杠：先点「暗杠」，再点要杠的牌（自动补足 4 张）；"
+                      "再点一次「暗杠」＝取消",
         }.get(key, "")
 
     # ---- 番表页
@@ -1577,7 +1582,7 @@ class MahjongFanWindow(QMainWindow):
             except Exception:   # noqa: BLE001
                 pass
         mode = s.get("mode")
-        if mode in ("stand", "chi", "peng", "minggang", "angang"):
+        if mode in MODE_KEYS:
             getattr(self, "btn_mode_" + mode).setChecked(True)
             self.mode = mode
         page = s.get("page")
@@ -1685,7 +1690,14 @@ class MahjongFanWindow(QMainWindow):
 
     # ---------------------------------------------------------- 交互
     def on_mode_changed(self, idx: int) -> None:
-        self.mode = ("stand", "chi", "peng", "minggang", "angang")[idx]
+        """切换模式；★ v2.8.0：再点一次同一个按钮＝取消该模式，回到默认的「立牌」"""
+        key = MODE_KEYS[idx]
+        if key != "stand" and key == self.mode:
+            self.btn_mode_stand.setChecked(True)     # 取消 → 回「立牌」
+            self.statusBar().showMessage(
+                "已取消「%s」，回到「立牌」" % MODE_TEXTS[key], 2000)
+            key = "stand"
+        self.mode = key
         self.pending_chi = []
         self._refresh_all()
         self._autosave_settings()
@@ -1774,8 +1786,8 @@ class MahjongFanWindow(QMainWindow):
             self._refresh_all()
 
     # -------------------------------------- 点已选牌取消（★ v2.7.2，没有右键也能操作）
-    # 手机 / 触屏没有右键，所以「已选牌」区的每一张牌都可以直接点：点一下＝取消这张；
-    # 牌选择区的红角标同理（点一下 −1）。右键仍保留，鼠标用户习惯不变。
+    # 手机 / 触屏没有右键，所以「已选牌」区的每一张牌都可以直接点：点一下＝取消这张。
+    # 右键仍保留，鼠标用户习惯不变；★ v2.8.0 起牌选择区的红角标不再可点（只显示张数）。
     def on_hand_row_clicked(self, code) -> None:
         """点「立牌」区的一张牌＝取消这一张"""
         if not isinstance(code, str):
