@@ -7,19 +7,28 @@
         不能 import 的： Mahjong_Calculator.exe --hand "..." --json
                         （开发时用 python mahjong_core.py --hand "..." --json）
         这两种方式都**不需要 HTTP、不需要端口、不需要先启动谁**。
+    · ★ v2.9.0 读番：算完番可以把「合计 N 番」念出来（音频在程序目录的《数字》子目录）。
+      **别的程序要用不用复制我们的文件** —— 把程序目录告诉它就行：
+        · 进程内： score_hand(..., readout=True, base_dir=r"D:\麻将\Mahjong_Calculator",
+                             voice_set="鲸宝")
+        · 命令行： Mahjong_Calculator.exe --hand "..." --readout --dir "D:\麻将\Mahjong_Calculator"
+                   （加 `--voice-set 鲸宝` 换语音包；默认用「女声」）
+        · HTTP  ： GET /api/readout?total=123  → 中文读法 + 每段音频的文件名与下载地址
+                   （加 `&set=女声` 换语音包）
+    · ★ v2.9.3 《数字》下可以放**多套**录音（一套一个子目录，目录名＝语音包名）；
     · 本文件只为**浏览器**服务：内联一份单文件 Web 客户端（手机/平板打开就能算番），
       `/api/*` 是这份页面自己用的路由。**默认不需要口令**（想加门槛再传 --token）。
 
 单独运行（起 Web 版服务）：
     python mahjong_api.py [--host 127.0.0.1] [--port 8718] [--token 口令] [--anon web,info] [--verbose]
-也可以由主程序内嵌启动：Mahjong_Calculator.py →「工具 → 启动 Web 版」
+也可以由主程序内嵌启动：Mahjong_Calculator.py →「设置 → Web 版 → 启动 Web 版」（Ctrl+Alt+A）
 （两者用同一份代码，行为一致）。
 
 ★ 默认只监听 127.0.0.1（仅本机可访问）。若要对局域网/手机开放，
    显式传 --host 0.0.0.0（建议只在自家网络用；需要门槛时再加 --token）。
 
 ★ 免口令白名单（v2.5.0）：设了口令后，可以**分项**允许某些东西「不用口令也能用」，
-   主程序里在「工具 → 免口令访问设置…」逐项勾选（含 Web 客户端）。分组：
+   主程序里在「设置 → Web 版 → 免口令访问设置…」逐项勾选（含 Web 客户端）。分组：
      web   = Web 客户端页面 + 牌面图（/、/web、/index.html、/manifest、/favicon、/tiles/*）
      debug = 自测页 /debug        info = /api/health·/version·/tiles·/fan_table·/help
      score = /api/score           waits = /api/waits·/waits_all·/wins
@@ -29,8 +38,8 @@
 ★ Web 版界面布局与桌面版一致（v2.4.4，改 Web 布局请先看桌面版怎么排）：
     ① 牌选择区（索 / 筒 / 万 / 字牌 四行，点一下加一张、长按或右键减一张；
        ★ v2.8.0：红色数字只显示「已选张数」，点它不再减牌）
-    ② 模式行（立牌/吃/碰/明杠/暗杠 + 重置；重置 = 全部复位；
-       ★ v2.8.0：再点一次当前模式按钮 = 取消该模式，回到「立牌」）
+    ② 模式行（★ v2.9.5：重置 + 立牌/吃/碰/明杠/暗杠，重置在最左边；重置 = 全部复位；
+       ★ v2.8.0：再点一次当前模式按钮 = 取消该模式，回到「立牌」；★ 重置要建在模式按钮之前）
     ③ 选项区固定四行：□自摸 □和绝张 □抢杠和/杠上开花 □海底捞月/妙手回春 ／
        风圈 ／ 风位 ／ 花牌（8 张小图 + 「N 张」；花牌**不在牌池里**）
     ④ 已选牌（副露 / 立牌 / 和张 / 花牌 + 提示行）→ ⑤ 听牌候选 → ⑥ 算番结果
@@ -52,6 +61,25 @@
     POST /api/waits       听牌：13 张 → 每张听牌的番数
     POST /api/waits_all   听牌（不筛起和分，含不足 8 分的候选）
     POST /api/wins        /api/waits 的别名
+    ★ v2.9.0 读番（把「合计 N 番」念出来）：
+    GET  /api/readout?total=123   念法 + 音频清单：[{"word","file","url"}]（别的程序直接放音）
+    POST /api/readout             同上（JSON 体：{"total":123,"speak":false}）
+    GET  /audio/<文件名>          取读番音频片段（牌面图那样按白名单放行）
+    另外 /api/score 的请求体加 "readout":true 会在结果里附 "readout" 字段；
+    加 "speak":true 则在**这台电脑上**念出来（手机端请用 /api/readout 自己放音）。
+    ★ v2.9.3 选语音包：《数字》下可以放**多套**录音（一套一个子目录，目录名就是包名，
+    如 `数字\\鲸宝\\`、`数字\\女声\\`）。用哪一套一共有三个层次，就近覆盖：
+        ① 请求参数：`/api/readout?total=123&set=女声`（POST 里写 "set"）；
+        ② 服务器端默认：桌面端「设置 → 通用 → 语音包」（默认「女声」），
+           起服务时也可用 `--voice-set 名字` 指定；/api/version 会报 voice_set / voice_sets；
+        ③ 页面自己的选择：Web 页面上「语音：」下拉（存在浏览器本地，刷新还在）。
+    取音频：默认套用 `/audio/<文件名>`，指定套用 `/audio/<语音包>/<文件名>`
+    （读番接口返回的 url 已经带好包名，页面直接放就行）。
+    名字不认识 / 那套被删了会自动回退（默认包 → 《数字》根目录 → 第一个可用包），不会没声音。
+    ★ v2.9.1 自动读番的默认值：桌面端「设置 → 通用 → 默认开启自动读番」（默认开）会把
+    Web 页面「🔊 读番」的初始状态也设成开（渲染进页面的 SPEAK_DEFAULT），
+    所以**无论用桌面端还是手机/平板，都默认自动读番**；页面自己点过就以页面选择为准。
+    起服务时可用 `--speak-default 0` 把页面默认改成关；/api/version 会报 speak_default。
 
 牌张编码（与界面、图片文件名一致）
     B1~B9 = 1~9 筒    T1~T9 = 1~9 索    W1~W9 = 1~9 万
@@ -68,8 +96,11 @@
               "kong_bloom":false, "last_draw":false, "last_discard":false,
               "round_wind":"东", "seat_wind":"南",
               "flowers":2,                     # 花牌张数（每张 1 分）
-              "flower_tiles":["S1","P4"]}      # 也可直接给花牌代码
+              "flower_tiles":["S1","P4"]},     # 也可直接给花牌代码
+  "readout": true,                             # ★ v2.9.0 结果里附读番（念法与音频清单）
+  "speak": false                               # ★ 顺手在本机念出来（手机端用 /api/readout）
 }
+读番相关参数（★ v2.9.3）：`set=女声` 选用《数字》下的哪一套录音（不给＝服务器端默认）。
 
 张数口径（易错）：`concealed` 是「整手牌」且**包含和张**，长度必须 = 14 - 3×副露数；
 `win` 只用来指出其中哪一张是和张（可省，则取 concealed 最后一张）。
@@ -83,18 +114,28 @@ import json
 import os
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
+
+from mahjong_stats import (StatsDB, hand_sig, user_key_from,  # noqa: E402
+                           fans_text, fans_split)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 from mahjong_core import (MahjongFanCalculator, Meld, Options, TILE_CODES,  # noqa: E402
-                          code_of, name_of, num_of, suit_of, tile_of)
+                          VOICE_DIR_NAME, VOICE_SET_DEFAULT, VoicePlayer, code_of,
+                          count_voice_clips, find_voice_dir, name_of, num_of, readout_info,
+                          resolve_voice_dir, suit_of, tile_of, voice_name_ok,
+                          voice_set_label, voice_set_names, voice_set_of, voice_set_ok,
+                          voice_sets)
 
 APP_NAME = "国标麻将算番器"
+# ★ v2.9.7：Web 客户端（手机/平板/浏览器）的标题 —— 与桌面端区分开
+WEB_TITLE = "国标算番器客户端"
 API_NAME = "mahjong-api"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8718
@@ -116,9 +157,60 @@ class ApiError(Exception):
 class Engine:
     """线程安全的算番引擎封装（引擎本身只读，这里再加一把锁更稳妥）"""
 
-    def __init__(self, rules_path: Optional[str] = None):
+    def __init__(self, rules_path: Optional[str] = None, base_dir: Optional[str] = None,
+                 speak_default: bool = True, voice_set: Optional[str] = None):
         self._lock = threading.Lock()
         self._calc = MahjongFanCalculator(rules_path=rules_path)
+        # ★ v2.9.0：读番音频（《数字》目录）从哪儿找 —— 默认就找本文件所在目录
+        self.base_dir = base_dir
+        # ★ v2.9.1：Web 页面「🔊 读番」的默认状态（桌面端设置里的「默认开启自动读番」）
+        self.speak_default = bool(speak_default)
+        # ★ v2.9.3：**服务器端默认用哪一套录音**（《数字》下的子目录名，如「鲸宝」；
+        #   空＝用默认包 VOICE_SET_DEFAULT）。请求里带 `set=` 可以覆盖它。
+        self.voice_set = str(voice_set or "")
+        self._voice: Optional[VoicePlayer] = None
+
+    # ---- 读番（★ v2.9.0；★ v2.9.3 支持选语音包）
+    def voice_dir(self, voice_set: Optional[str] = None) -> Optional[str]:
+        """当前该用哪一套录音目录（voice_set=None → 用服务器端默认）"""
+        name = self.voice_set if voice_set is None else str(voice_set or "")
+        return resolve_voice_dir(name, self.base_dir)
+
+    @staticmethod
+    def _with_urls(info: dict) -> dict:
+        """给每段音频补一个下载地址（文件名是中文，按 URL 规范转义）
+
+        ★ v2.9.3：地址里带上语音包（`/audio/<语音包>/<文件>`），这样页面选了哪套就播哪套；
+        根目录那套（没有包名）仍是 `/audio/<文件>`。
+        """
+        pack = str(info.get("voice_set") or "")
+        head = "/audio/" + (quote(pack) + "/" if pack else "")
+        info["clips"] = [dict(c, url=(head + quote(c["file"])) if c["file"] else "")
+                         for c in info["clips"]]
+        return info
+
+    def readout(self, total: int, prefix: bool = True,
+                voice_set: Optional[str] = None) -> dict:
+        """「合计 N 番」怎么念：中文读法 + 每段音频（别的程序拿去自己放音即可）"""
+        return self._with_urls(readout_info(total, base_dir=self.base_dir, prefix=prefix,
+                                            voice_set=self.voice_set
+                                            if voice_set is None else voice_set))
+
+    def speak(self, total: int, prefix: bool = True,
+              voice_set: Optional[str] = None) -> dict:
+        """在本机念出来（Windows）；手机/浏览器端请拿 /api/readout 自己放音"""
+        with self._lock:
+            if self._voice is None:
+                self._voice = VoicePlayer()
+            voice = self._voice
+        info = readout_info(total, base_dir=self.base_dir, prefix=prefix,
+                            voice_set=self.voice_set if voice_set is None else voice_set)
+        played = False
+        if info["ok"]:
+            played = voice.play([c["path"] for c in info["clips"]])
+        self._with_urls(info)
+        info["played"] = played
+        return info
 
     # ---- 工具
     def tiles_of(self, codes) -> List[int]:
@@ -180,6 +272,34 @@ class Engine:
             raise ApiError("concealed 必须是数组或 {牌:张数} 对象")
         return self.tiles_of(data)
 
+    def readout_request(self, body: dict) -> dict:
+        """读番接口的请求体解析（GET 查询串 / POST JSON 共用）
+
+        {"total":123,"prefix":true,"speak":false,"set":"女声"} → 念法 + 音频清单
+        ★ v2.9.3：`set`（别名 voice_set / pack）＝用《数字》下哪一套录音；不给就用服务器端默认。
+        """
+        raw = body.get("total", body.get("n"))
+        if raw in (None, ""):
+            raise ApiError("缺少 total（要念的番数），例：/api/readout?total=123")
+        try:
+            total = int(str(raw).strip())
+        except Exception:                             # noqa: BLE001
+            raise ApiError("total 必须是整数，收到 %r" % (raw,))
+        if total < 0:
+            raise ApiError("total 不能是负数，收到 %d" % total)
+        prefix = body.get("prefix")
+        with_prefix = True if prefix is None else \
+            str(prefix).lower() not in ("0", "false", "no", "off")
+        # ★ v2.9.3：语音包（不给＝服务器端默认；给了就用它，名字不认识会自动回退）
+        pack = None
+        for key in ("set", "voice_set", "pack"):
+            if body.get(key) not in (None, ""):
+                pack = str(body[key]).strip()
+                break
+        if body.get("speak"):
+            return self.speak(total, prefix=with_prefix, voice_set=pack)
+        return self.readout(total, prefix=with_prefix, voice_set=pack)
+
     def parse_options(self, data) -> Options:
         d = data or {}
         if not isinstance(d, dict):
@@ -240,6 +360,10 @@ class Engine:
                 code_of(concealed[-1]) if concealed else None),
             "melds": [[code_of(t) for t in m.tiles] for m in melds],
         })
+        # ★ v2.9.0 读番：只要 "readout"（清单）/ "speak"（本机出声）任一为真就附上读番信息
+        if body.get("readout") or body.get("speak"):
+            out["readout"] = (self.speak(res.total) if body.get("speak")
+                              else self.readout(res.total))
         return out
 
     def check_shape(self, melds: List[Meld], concealed: List[int],
@@ -300,10 +424,24 @@ class Engine:
 
     def version(self) -> dict:
         rules = getattr(self._calc, "rules_path", "")
+        voice_dir = self.voice_dir()
+        sets = voice_sets(self.base_dir)
         return {"ok": True, "server": API_NAME, "app": APP_NAME,
                 "engine_fans": len(getattr(self._calc, "fan_values", {})),
                 "rules_file": os.path.basename(rules) if rules else "",
-                "rules_loaded": bool(getattr(self._calc, "rules", None))}
+                "rules_loaded": bool(getattr(self._calc, "rules", None)),
+                # ★ v2.9.0 读番：音频目录 + 片段数 + 本机能不能出声
+                # ★ v2.9.3：语音包（可选哪几套 / 服务器端默认用哪一套）
+                "voice_dir": voice_dir or "",
+                "voice_clips": count_voice_clips(self.base_dir, self.voice_set),
+                "voice_set": voice_set_of(voice_dir),
+                "voice_set_default": VOICE_SET_DEFAULT,
+                "voice_set_server": self.voice_set,
+                "voice_sets": [{"name": s["name"], "label": voice_set_label(str(s["name"])),
+                                "clips": s["clips"]} for s in sets],
+                "voice_can_play": VoicePlayer.available(),
+                # ★ v2.9.1：Web 页面「🔊 读番」的默认状态（别的程序也能据此跟着念）
+                "speak_default": bool(self.speak_default)}
 
 
 # ------------------------------------------------------------------ HTTP 层
@@ -316,6 +454,11 @@ import re                                                      # noqa: E402
 
 TILE_FILE_RE = re.compile(r"^(?:B[1-9]|T[1-9]|W[1-9]|F[1-4]|J[1-3]|S[1-4]|P[1-4]|empty)\.png$")
 
+# ★ v2.9.0：读番音频（《数字》目录）按白名单放行，别的文件名一律 404。
+# ★ v2.9.2：录音改成「一个文件＝一个中文词」，白名单也随之改成**词形匹配**
+#   （合计 / 番 / 1~3 个中文数字词 + .mp3/.wav）—— 重录增删片段都不用改代码。
+#   防目录穿越靠 `voice_name_ok()` 里「不含 / 与 \\」那两条。
+
 # ------------------------------------------------------------------ 免口令白名单
 # ★ v2.5.0：设了口令后，哪些东西可以「不用口令也能用」由调用方（GUI 设置）逐项勾选。
 #   口令为空时本来就不校验口令，这里不生效。
@@ -323,11 +466,16 @@ TILE_FILE_RE = re.compile(r"^(?:B[1-9]|T[1-9]|W[1-9]|F[1-4]|J[1-3]|S[1-4]|P[1-4]
 #   （注意 "/" 必须当「精确项」——写成前缀就会把一切路径都放行）
 ANON_GROUPS = {
     "web":   ("/", "/web", "/index.html", "/manifest.webmanifest",
-               "/favicon.ico", "/apple-touch-icon.png", "/tiles/*"),
+               "/favicon.ico", "/apple-touch-icon.png", "/tiles/*",
+               "/audio/*"),          # ★ v2.9.0：读番音频跟牌面图一样，属于「Web 客户端」资源
     "debug": ("/debug",),
     "info":  ("/api/health", "/api/version", "/api/tiles",
-               "/api/fan_table", "/api/help"),
-    "score": ("/api/score",),
+               "/api/fan_table", "/api/help",
+               "/api/readout"),      # ★ v2.9.0：读番属于查询类接口
+    "score": ("/api/score",
+               "/api/stats",
+               "/api/stats_detail",   # ★ v2.9.9：逐手明细跟统计走（不然点明细会被 401 挡回）
+               "/api/set_nick"),      # ★ v2.9.12：设昵称跟算番走（不然免口令的手机设不了）
     "waits": ("/api/waits", "/api/waits_all", "/api/wins"),
 }
 # 默认值：与 v2.4.x 行为完全一致（Web 页面/牌面图/自测页免口令，`/api/*` 要口令）
@@ -335,13 +483,124 @@ ANON_DEFAULT = ("web", "debug")
 
 # ★ v2.7.5：Web 页面模式行里的两个「工具按钮」——默认**都不显示**
 #   （对只想算番的人来说它们是干扰：一个是开发者自测页，一个是换口令）。
-#   想用就在桌面端「工具 → Web 版显示设置…」里勾上（或命令行 --show debug,token）。
+#   想用就在桌面端「设置 → Web 版 → 页面按钮显示设置…」里勾上（或命令行 --show debug,token）。
 WEB_SHOW_ITEMS = (
     ("debug", "接口自测页", "页面上的「接口自测页」按钮（打开 /debug 表单页，逐项试接口）"),
     ("token", "换口令", "页面上的「换口令」按钮（换成新口令后记在浏览器里）"),
 )
 WEB_SHOW_KEYS = [k for k, _, _ in WEB_SHOW_ITEMS]
 WEB_SHOW_DEFAULT: Tuple[str, ...] = ()      # 默认：两个都不显示
+
+# ★ v2.9.7：统计面板「显示哪些列」—— 两端（桌面端统计窗口 / Web 统计弹窗）共用同一套 key
+STATS_COL_ITEMS = (
+    ("user",    "用户"),
+    ("nick",    "昵称"),        # ★ v2.9.12：用户在客户端「设置」里自己填的
+    ("ctype",   "客户端"),
+    ("os",      "系统"),        # ★ v2.9.12：鸿蒙 6.0 / Android / iOS 17.0
+    ("browser", "浏览器"),      # ★ v2.9.12：微信 / Chrome / 华为浏览器
+    ("dev",     "设备型号"),    # ★ v2.9.12：三星 SM-S918U（安卓16+/鸿蒙/iOS 常为空）
+    ("ip",      "IP"),
+    ("ua",      "UA（设备）"),
+    ("fan",     "合计番数"),
+    ("cnt",     "次数"),
+    ("reach",   "达标"),
+    ("last",    "最近"),
+    ("fans",    "番种"),        # ★ v2.9.9：番种汇总（「无番和×3、碰碰和×1」）
+)
+STATS_COL_KEYS = tuple(k for k, _ in STATS_COL_ITEMS)
+# Web 客户端默认＝用户指定的 7 列 + v2.9.12 认人四件套（不含 UA：手机上 UA 基本没用，
+# 还占地方；也不含「番种」——那串字太长，手机上会挤爆；想要就在「设置 → 统计列」里勾）
+STATS_COLS_WEB_DEFAULT = ("user", "nick", "ctype", "os", "browser", "dev",
+                          "ip", "fan", "cnt", "reach", "last")
+# 桌面端默认＝全部列全开（能把 UUID / IP / UA / 番种都摊开，方便认人）
+STATS_COLS_DESKTOP_DEFAULT = STATS_COL_KEYS
+# ★ v2.9.9：老设置里没有的新列，启动时自动补到末尾（用户从没见过这一列，
+#   不算违背他的选择；只有他**主动勾掉过**才尊重他的选择——见 stats_cols_new_merged）
+STATS_COL_NEW_KEYS = ("fans",) + ("nick", "os", "browser", "dev")   # v2.9.12
+
+# ★ v2.9.10：**逐手明细**「显示哪些列」—— 与统计列同一套机制，两端（桌面明细窗口 /
+#   Web 明细面板）共用同一套 key。明细是 v2.9.9 才有的，所以没有「老设置」要补。
+DETAIL_COL_ITEMS = (
+    ("day",     "日期"),
+    ("time",    "时间（毫秒）"),
+    ("nick",    "昵称"),        # ★ v2.9.12：这一手牌时该用户填的昵称（改名不改历史）
+    ("ctype",   "客户端"),
+    ("os",      "系统"),        # ★ v2.9.12
+    ("browser", "浏览器"),      # ★ v2.9.12
+    ("dev",     "设备型号"),    # ★ v2.9.12
+    ("ip",      "IP"),
+    ("ua",      "UA（设备）"),
+    ("fan",     "番数"),
+    ("base",    "起番"),
+    ("reach",   "达标"),
+    ("fans_n",  "番种数"),
+    ("fans",    "番种"),
+)
+DETAIL_COL_KEYS = tuple(k for k, _ in DETAIL_COL_ITEMS)
+# Web 客户端默认：原来 6 列 + v2.9.12 认人四件套（手机上横向放不下 14 列，
+# 先给「认得出这一手」最有用的几列；想要剩下的在「设置 → 明细列」里勾上）
+DETAIL_COLS_WEB_DEFAULT = ("time", "nick", "ctype", "os", "browser", "dev",
+                           "ip", "fan", "reach", "fans")
+# 桌面端默认＝全部列全开
+DETAIL_COLS_DESKTOP_DEFAULT = DETAIL_COL_KEYS
+# ★ v2.9.12：明细列第一次有新列要补（老用户升级后自动勾上，不勾就永远看不到）
+DETAIL_COL_NEW_KEYS = ("nick", "os", "browser", "dev")
+
+
+def _cols_normalize(val, keys, default) -> tuple:
+    """列序规整的**唯一实现**（统计列 / 明细列共用）：去非法、去重、保序。
+
+    全部不合法就退回默认值；**绝不返回空**（空列＝表格全白，等于功能坏了）。
+    """
+    if isinstance(val, (list, tuple)):
+        res, seen = [], set()
+        for k in val:
+            k = str(k)
+            if k in keys and k not in seen:
+                seen.add(k)
+                res.append(k)
+        if res:
+            return tuple(res)
+    return tuple(default)
+
+
+def _cols_new_merged(val, keys, default, new_keys) -> tuple:
+    """老设置 + 新增列：把用户没见过的**新列**补到末尾（统计列 / 明细列共用）"""
+    cur = list(_cols_normalize(val, keys, default))
+    for k in new_keys:
+        if k in keys and k not in cur:
+            cur.append(k)
+    return tuple(cur)
+
+
+def stats_cols_normalize(val, default=STATS_COLS_WEB_DEFAULT) -> tuple:
+    """把任意输入（JSON / 设置项）规整成合法的**统计列**序"""
+    return _cols_normalize(val, STATS_COL_KEYS, default)
+
+
+def detail_cols_normalize(val, default=DETAIL_COLS_WEB_DEFAULT) -> tuple:
+    """把任意输入规整成合法的**明细列**序（★ v2.9.10）"""
+    return _cols_normalize(val, DETAIL_COL_KEYS, default)
+
+
+def stats_cols_new_merged(val, default=STATS_COLS_DESKTOP_DEFAULT,
+                          new_keys=STATS_COL_NEW_KEYS) -> tuple:
+    """★ v2.9.9：老设置 + 新增列 —— 把用户没见过的**新列**补到末尾
+
+    为什么需要：v2.9.8 存下来的设置里没有 `fans`，如果直接沿用，用户升级后
+    「番种」列永远不出现，等于新功能白做。但也不能无脑用默认值覆盖 —— 那会
+    把用户自己勾掉的列又勾回来。所以只补「新版本才有的 key」，且补到末尾。
+
+    ★ 用户**主动勾掉过**的情况无法区分（存下来的都是"不在列表里"），这一点
+      在文档里写明了：新列首次出现默认给用户看，不想要再勾掉一次即可。
+    """
+    return _cols_new_merged(val, STATS_COL_KEYS, default, new_keys)
+
+
+def detail_cols_new_merged(val, default=DETAIL_COLS_DESKTOP_DEFAULT,
+                           new_keys=DETAIL_COL_NEW_KEYS) -> tuple:
+    """★ v2.9.10：老设置 + 明细新增列（当前没有新增列，保留给以后加列用）"""
+    return _cols_new_merged(val, DETAIL_COL_KEYS, default, new_keys)
 
 WEB_CLIENT = r"""<!doctype html>
 <html lang="zh-CN"><head>
@@ -352,7 +611,7 @@ WEB_CLIENT = r"""<!doctype html>
 <meta name="apple-mobile-web-app-title" content="麻将算番">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/tiles/J1.png">
-<title>__APP__ · Web 版</title>
+<title>__APP_TITLE__</title>
 <style>
 :root{--blue:#2f7ff0;--bg:#f4f6fa;--card:#fff;--line:#dde3ec;--grey:#6b7684;--red:#e74c3c;
  /* ★ v2.7.0 牌尺寸全部改成变量：这组默认值 = 「布局：38px（默认）」，
@@ -371,9 +630,27 @@ WEB_CLIENT = r"""<!doctype html>
 body{margin:0;background:var(--bg);color:#1f2937;
  font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;font-size:15px}
 header{position:sticky;top:0;z-index:9;background:var(--blue);color:#fff;
- padding:10px 12px;display:flex;align-items:center;gap:8px;box-shadow:0 1px 6px #0002}
-header h1{font-size:16px;margin:0;flex:1;font-weight:600}
-header .st{font-size:11px;opacity:.9;white-space:nowrap}
+ padding:10px 12px;display:flex;align-items:center;gap:8px;box-shadow:0 1px 6px #0002;
+ /* ★ v2.9.7：标题要**严格居中**（不受左右控件宽度影响），用绝对定位实现。
+    position:sticky 本身就提供定位上下文，h1 的 left:50% 以 header 为基准 */
+ justify-content:space-between}
+/* ★ v2.9.7：标题绝对定位到正中间（严格居中，不受左右控件宽度影响）。
+   窄屏兜底：屏幕太窄时标题改为常规流、铺满一行，避免和两侧下拉重叠 */
+header h1{font-size:16px;margin:0;font-weight:600;
+ position:absolute;left:50%;transform:translateX(-50%);
+ white-space:nowrap;pointer-events:none}
+header .st{font-size:11px;opacity:.9;white-space:nowrap;margin-left:auto}
+/* ★ v2.9.7：顶栏里的「布局/按键」——同尺寸变量，跟底部按钮一起缩放 */
+header .selwrap{color:#fff;opacity:.95}
+header select{background:#fff}
+/* ★ v2.9.7：窄屏（手机竖屏）—— 顶栏放不下「两个下拉 + 居中标题」，改成两行：
+   第一行标题，第二行左右两个下拉。宁可换行，也不让标题被压住。 */
+@media (max-width:560px){
+  header{flex-wrap:wrap;row-gap:6px}
+  header h1{position:static;transform:none;order:-1;width:100%;
+            text-align:center;pointer-events:auto}
+  header .st{margin-left:auto}
+}
 main{padding:10px 10px 120px;max-width:760px;margin:0 auto}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;
  padding:8px 10px;margin:0 0 10px}
@@ -413,6 +690,10 @@ select{font:inherit;font-size:var(--btn-fs);border:1px solid var(--line);backgro
  border-radius:8px;padding:var(--btn-pad-y) var(--btn-pad-x);cursor:pointer;max-width:46vw}
 .selwrap{display:inline-flex;align-items:center;gap:4px;color:var(--grey);font-size:var(--btn-fs)}
 .mod{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+/* ★ v2.9.5：「重置」挪到「立牌」左边 —— 与模式按钮同一行、一起换行，不再单独占一行
+   （`flex:1 1 0` 让模式块可以压到 0 宽：窄屏时是**行内**继续换行，而不是整块跳到下一行） */
+.modrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.modrow .mod{margin-bottom:0;flex:1 1 0;min-width:0}
 .pool{margin:0 0 8px}
 .pool .line{display:flex;gap:3px;flex-wrap:wrap}
 .tile{position:relative;width:var(--tw);height:var(--th);border:2px solid transparent;border-radius:7px;
@@ -444,10 +725,38 @@ select{font:inherit;font-size:var(--btn-fs);border:1px solid var(--line);backgro
 .dlg .box{background:#fff;border-radius:12px;padding:16px;width:min(92vw,360px)}
 .dlg input{font:inherit;width:100%;padding:8px;border:1px solid var(--line);border-radius:8px}
 footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);
- padding:8px 10px;display:flex;gap:8px;justify-content:center}
+ padding:8px 10px;display:flex;gap:8px;justify-content:center;align-items:center;
+ /* ★ v2.9.4：底栏里多了「布局 / 按键 / 设置」，窄屏放不下就换行（2 行也够用） */
+ flex-wrap:wrap;row-gap:6px}
+footer .selwrap{font-size:var(--btn-fs)}
+footer select{max-width:42vw}
+.livetot{font-size:12px;color:#2f7ff0;margin-right:auto}
+.statsdlg .box{width:min(94vw,440px);max-height:84vh;overflow:auto}
+.statsdlg table{width:100%;border-collapse:collapse;font-size:13px}
+.statsdlg th,.statsdlg td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right}
+.statsdlg th:first-child,.statsdlg td:first-child{text-align:left;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.statsdlg .sum{margin:8px 0;font-weight:bold}
+.statsdlg select{font:inherit;padding:6px;border:1px solid var(--line);border-radius:8px;max-width:42vw}
+/* ★ v2.9.11：弹窗内的**分页标签**（统计弹窗：统计 / 明细；设置弹窗：读番 / 列显示）
+   手机上弹窗本来就是一屏，内容一多就「什么都挤在一起」——用标签一页只显示一类内容。 */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:0 0 10px}
+.tabs button{border:none;background:none;padding:6px 10px;border-radius:8px 8px 0 0;
+ color:var(--grey);font-size:14px;cursor:pointer;position:relative;top:1px}
+.tabs button.on{color:#2f7ff0;font-weight:600;background:#eef3fb;
+ border:1px solid var(--line);border-bottom-color:#eef3fb}
+.tabpane{display:none}
+.tabpane.show{display:block}
+/* ★ v2.9.7：设置里「统计列」的勾选区（一列两个，窄屏自动折行） */
+.colswrap{display:flex;flex-wrap:wrap;gap:6px 14px;flex:1;min-width:0}
+.colswrap label{display:inline-flex;align-items:center;gap:5px;font-size:13px;
+ cursor:pointer;white-space:nowrap}
+.colswrap input{width:16px;height:16px;cursor:pointer}
 </style></head><body>
 <header>
-  <h1>__APP__ · Web 版</h1>
+  <!-- ★ v2.9.7：「布局 / 按键」从底栏搬到顶栏左侧，标题居中 -->
+  <span class="selwrap">布局：<select id="lysel" onchange="setLayout(this.value)"></select></span>
+  <span class="selwrap">按键：<select id="szsel" onchange="applyBtnSize(this.value)"></select></span>
+  <h1>__APP_TITLE__</h1>
   <div class="st" id="st">连接中…</div>
 </header>
 <main>
@@ -457,15 +766,13 @@ footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px sol
     <div class="pool" id="pool"></div>
   </div>
 
-  <!-- ② 模式行（立牌/吃/碰/明杠/暗杠 + 重置） -->
+  <!-- ② 模式行（★ v2.9.5：「重置」在「立牌」左边，同一行；★ v2.9.4：读番/语音/布局/按键都搬走了） -->
   <div class="card">
-    <div class="mod" id="modes"></div>
+    <div class="modrow">
+      <button class="warn" id="btn_reset" onclick="resetAll()">重置</button>
+      <div class="mod" id="modes"></div>
+    </div>
     <div class="btns" style="margin-top:8px">
-      <button class="warn" onclick="resetAll()">重置</button>
-      <!-- ★ v2.8.3：布局 / 按键改成**下拉框**（点一下直接选，不用一圈圈循环），
-           选项文字里直接写清是多少 px（布局＝牌宽，按键＝字号） -->
-      <span class="selwrap">布局：<select id="lysel" onchange="setLayout(this.value)"></select></span>
-      <span class="selwrap">按键：<select id="szsel" onchange="applyBtnSize(this.value)"></select></span>
       <button id="btn_debug" style="__SHOW_DEBUG__" onclick="window.open('/debug','_blank')">接口自测页</button>
       <button id="btn_token" style="__SHOW_TOKEN__" onclick="setToken()">换口令</button>
     </div>
@@ -512,17 +819,110 @@ footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px sol
   </div>
 </main>
 <footer>
+  <span class="livetot" id="livetot"></span>
   <button id="jump_pool" onclick="gotoBlock('c_pool')">↑ 牌池</button>
   <button id="jump_res" onclick="gotoBlock('c_res')">↓ 结果</button>
+  <!-- ★ v2.9.7：「布局 / 按键」已搬到**顶部蓝条**（标题左右居中那一带），底栏不再放 -->
+  <!-- ★ v2.9.4：设置按钮 —— 读番开关与语音包都收进这个弹窗里 -->
+  <button id="btn_set" onclick="showSet()" title="设置：读番 / 语音">设置</button>
+  <!-- ★ v2.9.6：统计按钮（在「设置」右边）—— 查看所有用户的算番统计 -->
+  <button id="btn_stats" onclick="showStats()" title="查看所有人的算番统计">统计</button>
 </footer>
+
+<!-- ★ v2.9.4：页面「设置」弹窗（读番开关 + 语音包）—— 原来这两个在模式行里，太占地方 -->
+<div class="dlg" id="setdlg" onclick="if(event.target===this)hideSet()"><div class="box">
+  <h3 style="margin:0 0 8px">设置</h3>
+  <div class="row">
+    <div class="lb">读番</div>
+    <button id="btn_speak" onclick="toggleSpeak()"
+            title="读出总番：合计 N 番（音频在电脑端《数字》目录，手机也会出声）">🔊 读番</button>
+    <span class="tip">开启后每算出一手牌就念一次</span>
+  </div>
+  <div class="row" id="vswrap" style="__VOICE_SET_HIDE__">
+    <div class="lb">语音</div>
+    <select id="vssel" onchange="setVoicePack(this.value)"
+            title="读番用哪一套录音（《数字》下每个子目录一套）"></select>
+  </div>
+  <!-- ★ v2.9.12：昵称（这台设备在统计里叫什么）——真正的「设备名称」浏览器不给，
+       只能让用户自己填；填了统计表里一眼就能认出是谁 -->
+  <div class="row">
+    <div class="lb">昵称</div>
+    <input id="nickinput" type="text" maxlength="24" placeholder="比如：老张的红米"
+           style="flex:1;min-width:0" onchange="onNickChange(this.value)"
+           onkeydown="if(event.key==='Enter')this.blur()">
+    <button onclick="onNickChange(el('nickinput').value)">保存</button>
+  </div>
+  <div class="row"><div class="lb"></div>
+    <span id="nickhint" class="tip"></span>
+  </div>
+  <!-- ★ v2.9.7：统计面板显示哪些列（只影响这台设备） -->
+  <div class="row" style="align-items:flex-start">
+    <div class="lb">统计列</div>
+    <div id="statcolswrap" class="colswrap"></div>
+  </div>
+  <!-- ★ v2.9.10：逐手明细显示哪些列（只影响这台设备） -->
+  <div class="row" style="align-items:flex-start">
+    <div class="lb">明细列</div>
+    <div id="detailcolswrap" class="colswrap"></div>
+  </div>
+  <div class="tip">
+    「读番」＝把「合计 N 番」念出来（音频在电脑端《数字》目录里，手机自己出声）。<br>
+    「语音」＝读番用哪一套录音，默认「女声」；电脑端「设置 → 通用 → 语音包」改的是它的默认值。<br>
+    「昵称」＝这台设备在统计里叫什么（只认人用，随便填；重名会自动加 #2）。<br>
+    「统计列」＝点「统计」后表格里显示哪几列，勾了立刻生效。<br>
+    「明细列」＝在统计里点某个人展开的「逐手明细」显示哪几列。<br>
+    这里选的都只记在<b>这台设备</b>上，刷新、下次打开都还在。<br>
+    <span style="opacity:.8">注：「系统 / 浏览器 / 设备型号」是从浏览器自报的 UA 里读的 ——
+    安卓 16+ 与鸿蒙的型号浏览器不再提供，所以「设备型号」可能显示「-」，属正常。</span>
+  </div>
+  <div class="btns" style="margin-top:10px">
+    <button class="on" onclick="hideSet()">关闭</button>
+  </div>
+</div></div>
+
 <div class="dlg" id="dlg"><div class="box">
   <h3 style="margin:0 0 8px">需要访问口令</h3>
-  <p class="tip" id="dlgmsg">请输入电脑端「工具 → API 地址与用法」里显示的口令。</p>
+  <p class="tip" id="dlgmsg">请输入电脑端「设置 → Web 版 → 地址与用法」里显示的口令。</p>
   <input id="tkin" placeholder="口令" autocomplete="one-time-code">
   <div class="btns" style="margin-top:10px">
     <button class="on" onclick="saveToken()">确定</button>
     <button onclick="hideDlg()">取消</button>
   </div>
+</div></div>
+
+<!-- ★ v2.9.6：统计弹窗（查看全部人的算番统计，按天聚合）
+     ★ v2.9.11：拆成「统计 / 明细」两个分页标签 —— 原来表格 + 明细挤在一屏，太乱 -->
+<div class="dlg statsdlg" id="statsdlg" onclick="if(event.target===this)hideStats()"><div class="box">
+  <h3 style="margin:0 0 8px">算番统计</h3>
+  <div class="tabs">
+    <button id="stab_stat" class="on" onclick="showStatTab('stat')">统计</button>
+    <button id="stab_detail" onclick="showStatTab('detail')">明细</button>
+  </div>
+
+  <!-- ---- 分页 1：统计表（按人聚合） -->
+  <div class="tabpane show" id="spane_stat">
+    <div class="row">
+      <div class="lb">日期</div>
+      <select id="statday" onchange="loadStats()"></select>
+      <button onclick="loadStats()">刷新</button>
+    </div>
+    <div class="sum" id="statsum"></div>
+    <div style="overflow:auto">
+      <!-- ★ v2.9.7：表头由 JS 按「设置」里勾选的列动态生成（不在 HTML 里写死） -->
+      <table id="stattab"><thead><tr id="stathead"></tr></thead>
+        <tbody id="statbody"></tbody></table>
+    </div>
+    <div class="tip">IP+UUID 为主、IP+UA 兜底；按天统计，毫秒级时间戳；桌面端本地算番也计入。<br>
+      ★ 点表格里<b>任意一行</b>切到「明细」页看这个人的<b>逐手记录</b>（每一手的时间/番数/番种）。</div>
+  </div>
+
+  <!-- ---- 分页 2：逐手明细（点统计表某一行后自动切过来） -->
+  <div class="tabpane" id="spane_detail">
+    <!-- ★ v2.9.9：逐手牌明细；★ v2.9.11 挪进单独一页 -->
+    <div id="statdetail"><div class="tip">在「统计」页点一个人的那一行，这里就显示他的逐手明细。</div></div>
+  </div>
+
+  <div class="btns" style="margin-top:10px"><button class="on" onclick="hideStats()">关闭</button></div>
 </div></div>
 
 <script>
@@ -552,6 +952,7 @@ function q(u){return u+(TOKEN?("?"+(u.includes("?")?"&":"")+"token="+encodeURICo
 async function api(path,body){
   const h={"Content-Type":"application/json"};
   if(TOKEN)h["X-Api-Token"]=TOKEN;
+  if(MY_UUID)h["X-Client-UUID"]=MY_UUID;   /* ★ v2.9.6：客户端唯一标识，服务端据此区分用户 */
   const r=await fetch(path,{method:body?"POST":"GET",headers:h,
                             body:body?JSON.stringify(body):undefined});
   if(r.status===401){showDlg();throw new Error("需要访问口令");}
@@ -828,6 +1229,7 @@ function chooseWin(code){
   S.win=(S.win===code)?null:code;render();
 }
 function resetAll(){/* ★ 全部重置（与桌面版一致） */
+  stopSpeak();                     /* ★ v2.9.0：正在念的也停掉（「读番」开关本身不动） */
   S.melds=[];S.concealed={};S.win=null;S.pending=[];S.flowers=[];S.mode="stand";
   S.opts={tsumo:false,last_tile:false,special_a:false,special_b:false,
           round:"东",seat:"东"};
@@ -957,8 +1359,10 @@ async function compute(){
       el("c_wait").style.display="none";
       const hand=concealedList().slice();      /* ★ 接口要「含和张」的整手牌 */
       if(S.win)hand.push(S.win);
+      /* ★ v2.9.12：顺带把昵称和（能问到的）设备型号报上去 */
       const body={melds:meldsBody(),concealed:hand,
-                  win:S.win||null,options:optsBody()};
+                  win:S.win||null,options:optsBody(),uuid:MY_UUID,
+                  nick:MY_NICK,model:MY_MODEL};
       const j=await api("/api/score",body);
       el("tot").textContent=j.total+" 番";
       el("tot").className="tot"+(j.reach_standard?"":" low");
@@ -967,6 +1371,12 @@ async function compute(){
                                          "番种合计 "+j.base+" 分，未达 8 分起和标准");
       el("fans").innerHTML=(j.fans||[]).map(f=>'<div class="tag"><b>'+f.value+
         '</b>'+f.name+'</div>').join("");
+      /* ★ v2.9.0：记下总番；开着「读番」就念出来（合计 N 番） */
+      currentTotal=j.total;
+      if(SPEAK)speakTotal(j.total);
+      /* ★ v2.9.6：本机实时累计（仅当天；同一手牌只计一次，避免选项切换刷数） */
+      const hs=sigHand();
+      if(hs!==lastHandSig){lastHandSig=hs;liveTotal+=j.total||0;liveCount++;updateLive();}
     }else if(n===need){                 /* 13-3m：列听牌候选 */
       el("c_wait").style.display="";
       try{
@@ -977,12 +1387,14 @@ async function compute(){
       el("tot").textContent="—";el("fans").innerHTML="";
       el("msg").textContent="已选满 13 张，点上面的候选或点一张牌作为和张即可出结果。";
       el("tot").className="tot";
+      currentTotal=null;
     }else{
       el("c_wait").style.display="none";
       el("tot").textContent="—";el("tot").className="tot";
       el("pat").textContent="";el("fans").innerHTML="";
       el("msg").textContent="已选共 "+totalTiles()+" 张，再选 "+
         Math.max(0,(need+1)-totalTiles())+" 张即可算番。";
+      currentTotal=null;
     }
   }catch(e){
     el("msg").textContent="接口错误："+e.message;
@@ -998,6 +1410,94 @@ function drawWaits(list){
   }).join("");
 }
 
+/* ---------- 读番（★ v2.9.0）：把「合计 N 番」读出来 ----------
+   点模式行的「🔊 读番」开/关；开着时每算出总番就念一遍。
+   音频是**电脑端《数字》目录**里的片段：/api/readout?total=N 给清单（中文读法 + 每段文件名），
+   /audio/<文件名> 是音频本身 —— 所以**手机/平板自己出声**，电脑不用装任何东西、也不占电脑喇叭。
+   ★ v2.9.3：《数字》下可以放多套录音（`数字\鲸宝\`、`数字\女声\`…），
+   请求带 `&set=<语音包名>` 就是「用哪一套」，取音频也变成 `/audio/<语音包>/<文件名>`；
+   页面上的「语音：」下拉就是给这个用的（本机选择存在 localStorage，不影响别人）。
+   别的程序（微信小程序 / 网页 / 自家软件）同样调这两个接口即可，**不用复制音频文件**。 */
+const SPEAK_KEY="mj_speak";
+/* ★ v2.9.1：默认是否自动读番 —— 由**服务器端设置**（桌面端「设置 → 通用 → 默认开启自动读番」）
+   渲染进来，默认 true。这样「无论用哪个端，都能自动读番」。 */
+const SPEAK_DEFAULT=__SPEAK_DEFAULT__;
+let SPEAK=SPEAK_DEFAULT, speakQueue=[], speakAudio=null, currentTotal=null;
+/* ★ v2.9.3：读番用哪一套录音 —— 《数字》下有几个子目录就有几套（目录名＝语音包名），
+   默认用服务器端设置的那一套；本机在这儿选过就只影响本机（存 localStorage）。 */
+const VOICE_SETS=__VOICE_SETS__, VOICE_SET_SERVER=__VOICE_SET__, VOICE_KEY="mj_voice";
+let VOICE_SET=VOICE_SET_SERVER;
+function loadVoicePack(){
+  try{const v=localStorage.getItem(VOICE_KEY);
+      VOICE_SET=(v&&VOICE_SETS.indexOf(v)>=0)?v:VOICE_SET_SERVER;}
+  catch(e){VOICE_SET=VOICE_SET_SERVER;}
+  if(VOICE_SETS.indexOf(VOICE_SET)<0)VOICE_SET=VOICE_SETS.length?VOICE_SETS[0]:"";  /* 那套被删了 */
+  fillVoiceOptions();
+}
+function fillVoiceOptions(){
+  const s=el("vssel");
+  if(!s)return;
+  if(s.options.length!==VOICE_SETS.length){          /* 选项变了才重建（保住当前选择） */
+    s.innerHTML=VOICE_SETS.map(n=>'<option value="'+n+'">'+
+                  (n||"（数字 根目录）")+'</option>').join("");
+  }
+  s.value=VOICE_SET;
+}
+function setVoicePack(name){
+  VOICE_SET=name;
+  try{localStorage.setItem(VOICE_KEY,name);}catch(e){}
+  if(SPEAK)speakTotal(currentTotal!==null?currentTotal:0);   /* 换了就念一遍新的 */
+}
+function loadSpeak(){
+  /* 这个浏览器自己选过（点过「🔊 读番」）就听本机的；没选过才用服务器给的默认值 */
+  try{const v=localStorage.getItem(SPEAK_KEY);
+      SPEAK=(v===null||v===undefined)?SPEAK_DEFAULT:(v==="1");}
+  catch(e){SPEAK=SPEAK_DEFAULT;}
+}
+function markSpeak(){
+  const b=el("btn_speak");
+  if(b)b.className=SPEAK?"on":"";
+  /* ★ v2.9.4：读番开关收进「设置」了，就在设置按钮上留个提示，免得不知道现在开着没 */
+  const s=el("btn_set");
+  if(s)s.title="设置：读番"+((SPEAK?"开启":"关闭"))+" / 语音包";
+}
+function toggleSpeak(){
+  SPEAK=!SPEAK;
+  try{localStorage.setItem(SPEAK_KEY,SPEAK?"1":"0");}catch(e){}
+  markSpeak();
+  if(SPEAK)speakTotal(currentTotal!==null?currentTotal:0); /* 点开就先念一次（顺便解锁自动播放） */
+  else stopSpeak();
+}
+function stopSpeak(){
+  speakQueue=[];
+  if(speakAudio){try{speakAudio.pause();}catch(e){} speakAudio=null;}
+}
+function playClips(urls){
+  speakQueue=urls.slice();
+  const next=()=>{
+    if(!speakQueue.length){speakAudio=null;return;}
+    const a=new Audio(q(speakQueue.shift()));      /* q() 带上口令（设了口令时） */
+    speakAudio=a;
+    a.onended=next; a.onerror=next;
+    a.play().catch(()=>{speakAudio=null;});         /* 浏览器不让自动播就安静放弃 */
+  };
+  next();
+}
+async function speakTotal(n){
+  if(n===null||n===undefined||n==="")return;
+  try{
+    /* ★ v2.9.3：把本机选的语音包一起带上（服务器按它挑录音；不给就用服务器端默认） */
+    const j=await api("/api/readout?total="+encodeURIComponent(n)
+                      +"&set="+encodeURIComponent(VOICE_SET));
+    const urls=(j.clips||[]).map(c=>c.url).filter(u=>u);
+    if(urls.length)playClips(urls);
+  }catch(e){/* 读番失败不影响算番 */}
+}
+
+/* ---------- 设置弹窗（★ v2.9.4：读番开关 + 语音包；点底栏「设置」打开） ---------- */
+function showSet(){el("setdlg").classList.add("show");}
+function hideSet(){el("setdlg").classList.remove("show");}
+
 /* ---------- 口令 ---------- */
 function showDlg(){el("dlg").classList.add("show");}
 function hideDlg(){el("dlg").classList.remove("show");}
@@ -1010,20 +1510,351 @@ function loadToken(){
   else{try{TOKEN=localStorage.getItem("mj_token")||"";}catch(e){TOKEN="";}}
 }
 
+/* ---------- 统计（★ v2.9.6）：客户端唯一标识 + 本机实时累计 + 查看全部人 ---------- */
+const UUID_KEY="mj_uuid";
+let MY_UUID="";
+let liveTotal=0, liveCount=0, lastHandSig="";
+
+/* ---------- ★ v2.9.12：昵称（自己填的设备名）+ 设备型号（能问到就上报） ----------
+   浏览器**不提供**设备名称，只能让用户自己填；型号则试试 UA-CH 的
+   getHighEntropyValues(['model'])（只有 Chromium + HTTPS 才给，局域网明文多半失败，
+   失败了就是空串，服务端退回 UA 解析，不影响别的）。 */
+const NICK_KEY="mj_nick", MODEL_KEY="mj_model";
+let MY_NICK="", MY_MODEL="";
+function loadNick(){
+  try{MY_NICK=localStorage.getItem(NICK_KEY)||"";}catch(e){MY_NICK="";}
+  const i=el("nickinput"); if(i)i.value=MY_NICK;
+}
+function nickHint(t){const h=el("nickhint"); if(h)h.textContent=t||"";}
+function onNickChange(v){
+  const raw=String(v||"").trim().slice(0,24);
+  const i=el("nickinput"); if(i)i.value=raw;
+  nickHint("保存中…");
+  api("/api/set_nick",{uuid:MY_UUID,nick:raw}).then(function(j){
+    if(!j||!j.ok){nickHint("保存失败："+((j&&j.error)||"未知错误"));return;}
+    MY_NICK=j.nick||raw;
+    try{localStorage.setItem(NICK_KEY,MY_NICK);}catch(e){}
+    const i2=el("nickinput"); if(i2)i2.value=MY_NICK;
+    /* 服务端可能因为重名给加了 #2 —— 必须如实告诉用户，否则他不知道自己显示成啥 */
+    if(!MY_NICK)nickHint("昵称已清空");
+    else if(MY_NICK===raw)nickHint("已保存：统计里会显示「"+MY_NICK+"」");
+    else nickHint("同名已存在，你被记为「"+MY_NICK+"」");
+    if(el("statsdlg")&&el("statsdlg").classList.contains("show"))loadStats();
+  }).catch(function(e){nickHint("保存失败："+e);});
+}
+function probeModel(){
+  try{MY_MODEL=localStorage.getItem(MODEL_KEY)||"";}catch(e){}
+  try{
+    const ud=navigator.userAgentData;
+    if(ud&&ud.getHighEntropyValues){
+      ud.getHighEntropyValues(["model"]).then(function(d){
+        const m=(d&&d.model)?String(d.model).slice(0,40):"";
+        if(m&&m!==MY_MODEL){MY_MODEL=m;try{localStorage.setItem(MODEL_KEY,m);}catch(e){}}
+      }).catch(function(){});
+    }
+  }catch(e){}
+}
+function clientUUID(){
+  try{let u=localStorage.getItem(UUID_KEY);
+    if(!u){u=(window.crypto&&crypto.randomUUID)?crypto.randomUUID()
+            :"u"+Date.now().toString(16)+Math.random().toString(16).slice(2);
+      try{localStorage.setItem(UUID_KEY,u);}catch(e){}}
+    return u;}catch(e){return "";}
+}
+function sigHand(){
+  /* 手牌签名（含牌/副露/和张），同手牌只累计一次，避免选项切换刷数 */
+  try{return JSON.stringify(concealedList())+"|"+JSON.stringify(meldsBody())+"|"+(S.win||"");}
+  catch(e){return ""+Math.random();}
+}
+function updateLive(){
+  const e=el("livetot");
+  if(e)e.textContent="今日累计 "+liveTotal+" 番（"+liveCount+" 手）";
+}
+/* UUID / UA 是**客户端可控**的字符串，不能直接拼进 innerHTML，否则一个恶意
+   客户端就能往别人的统计表里塞标签。统一过一遍转义。 */
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+
+/* ---------- ★ v2.9.7：统计面板「显示哪些列」（可自定义） ----------
+   STAT_COLS_DEF  = 全部可选列（服务端给，与桌面端同一套 key）
+   STAT_COLS_DEF0 = 服务端默认显示那几列（桌面端「设置 → 通用 → 统计显示列」）
+   本机在「设置」里勾过 → 存 localStorage，只影响这台设备；没勾过 → 用服务端那套。  */
+const STAT_COLS_DEF=__STATS_COL_DEF__;
+const STAT_COLS_DEF0=__STATS_COL_DEFAULT__;
+const STATCOLS_KEY="mj_statscols";
+/* ★ v2.9.10：明细列（与统计列同一套机制，只是换了一组 key 和 localStorage 键） */
+const DETAIL_COLS_DEF=__DETAIL_COL_DEF__;
+const DETAIL_COLS_DEF0=__DETAIL_COL_DEFAULT__;
+const DETAILCOLS_KEY="mj_detailcols";
+/* 一组列的「读 / 存 / 画勾 / 改动」逻辑完全一样，抽成一个工厂，避免复制两遍 */
+function colStore(key,def,def0){
+  return {
+    get:function(){
+      try{const v=localStorage.getItem(key);
+        if(v){const a=JSON.parse(v);
+          if(Array.isArray(a)){const ok=a.filter(k=>def.some(d=>d.k===k));
+            if(ok.length)return ok;}}}catch(e){}
+      return def0.slice();
+    },
+    save:function(a){try{localStorage.setItem(key,JSON.stringify(a));}catch(e){}},
+    render:function(wrapId,onchg){
+      const w=el(wrapId); if(!w)return;
+      const cur=this.get();
+      w.innerHTML=def.map(d=>
+        '<label><input type="checkbox" data-k="'+esc(d.k)+'"'
+        +(cur.indexOf(d.k)>=0?" checked":"")+' onchange="'+onchg+'()">'
+        +esc(d.n)+'</label>').join("");
+    },
+    /* 返回本次勾选结果；一列都没勾时返回 null（调用方负责把兜底列勾回来） */
+    changed:function(wrapId){
+      const w=el(wrapId); if(!w)return null;
+      const a=[];
+      w.querySelectorAll("input[data-k]").forEach(i=>{
+        if(i.checked)a.push(i.getAttribute("data-k"));});
+      if(!a.length)return null;
+      this.save(a);
+      return a;
+    }
+  };
+}
+const STATC=colStore(STATCOLS_KEY,STAT_COLS_DEF,STAT_COLS_DEF0);
+const DETAILC=colStore(DETAILCOLS_KEY,DETAIL_COLS_DEF,DETAIL_COLS_DEF0);
+function statCols(){return STATC.get();}
+function saveStatCols(a){STATC.save(a);}
+function detailCols(){return DETAILC.get();}
+function renderStatColBoxes(){STATC.render("statcolswrap","onStatColChange");}
+function renderDetailColBoxes(){DETAILC.render("detailcolswrap","onDetailColChange");}
+function onStatColChange(){
+  /* 至少留一列：一列都不勾表格就全白，等于把功能弄坏了 */
+  if(!STATC.changed("statcolswrap")){renderStatColBoxes();return;}
+  buildStatHead();
+  if(el("statsdlg").classList.contains("show"))loadStats();
+}
+function onDetailColChange(){
+  /* 明细至少留「时间」——没有时间就不叫「逐手」记录了 */
+  const a=DETAILC.changed("detailcolswrap");
+  if(!a){renderDetailColBoxes();return;}
+  if(DETAIL_UK)openDetail(DETAIL_UK);      /* 明细正开着 → 立刻按新列重画 */
+}
+function buildStatHead(){
+  const h=el("stathead"); if(!h)return;
+  const cur=statCols();
+  h.innerHTML=STAT_COLS_DEF.filter(d=>cur.indexOf(d.k)>=0)
+    .map(d=>"<th>"+esc(d.n)+"</th>").join("");
+}
+function statCell(k,u){
+  switch(k){
+    case "user":  return esc((u.uuid||u.user_key||"?").slice(0,16));
+    case "ctype": return u.client_type==="desktop"?"桌面":"Web";
+    case "ip":    return '<span style="font-size:12px">'+esc(u.ip||"-")+"</span>";
+    case "ua":    return '<span style="font-size:12px">'+esc(uaBrief(u.ua))+"</span>";
+    case "fan":   return String(u.total_fan||0);
+    case "cnt":   return String(u.cnt||0);
+    case "reach": return String(u.reach_cnt||0);
+    case "last":  return '<span style="font-size:12px">'
+      +esc(u.last_ts?new Date(u.last_ts/1).toLocaleString("zh-CN"):"-")+"</span>";
+    /* ★ v2.9.9：番种汇总（「无番和×3、碰碰和×1」），太长会挤，所以小字 + 完整串挂 title */
+    case "fans":  return '<span style="font-size:12px" title="'+esc(u.fans||"")+'">'
+      +esc(u.fans||"-")+"</span>";
+    /* ★ v2.9.12：认人四件套。os/browser/dev/nick 都是服务端算好塞进来的，
+       这里不用再解析一遍 UA（两端规则一致靠的就是这件事） */
+    case "nick":    return nickHtml(u.nick);
+    case "os":      return '<span style="font-size:12px">'+esc(u.os||"-")+"</span>";
+    case "browser": return '<span style="font-size:12px">'+esc(u.browser||"-")+"</span>";
+    case "dev":     return '<span style="font-size:12px" title="'+esc(u.dev||"")+'">'
+      +esc(u.dev||"-")+"</span>";
+  }
+  return "";
+}
+/* 昵称：认人的主力，稍微显眼一点；没填就一个淡淡的「-」 */
+function nickHtml(n){
+  n=(n||"").trim();
+  if(!n)return '<span style="font-size:12px;opacity:.45">-</span>';
+  return '<b style="font-size:12px">'+esc(n)+"</b>";
+}
+/* 把一长串 User-Agent 压成一个一眼认得出的设备名（与桌面端 _ua_brief 同一套判断） */
+function uaBrief(ua){
+  const low=(ua||"").toLowerCase();
+  if(!low)return "-";
+  const M=[["micromessenger","微信"],["ipad","iPad"],["iphone","iPhone"],
+           ["harmony","鸿蒙"],["android","Android"],["windows","Windows"],
+           ["macintosh","Mac"],["mac os x","Mac"],["linux","Linux"]];
+  for(let i=0;i<M.length;i++) if(low.indexOf(M[i][0])>=0) return M[i][1];
+  return (ua||"").split("/")[0].trim().slice(0,14)||"-";
+}
+function showStats(){
+  el("statsdlg").classList.add("show");
+  showStatTab("stat");          /* ★ v2.9.11：每次打开都回到「统计」页 */
+  loadStats();
+}
+function hideStats(){el("statsdlg").classList.remove("show");closeDetail();}
+/* ---------- ★ v2.9.11：统计弹窗的两个分页标签（统计 / 明细） ----------
+   `_statTab` 记住当前页。注意：切页**不重新拉数据** ——
+   统计表已经画好了，明细是点某一行时才拉的（切回「统计」不该把表格刷没）。 */
+let _statTab="stat";
+function showStatTab(name){
+  _statTab=(name==="detail")?"detail":"stat";
+  const a=el("stab_stat"), b=el("stab_detail");
+  const pa=el("spane_stat"), pb=el("spane_detail");
+  if(a)a.classList.toggle("on",_statTab==="stat");
+  if(b)b.classList.toggle("on",_statTab==="detail");
+  if(pa)pa.classList.toggle("show",_statTab==="stat");
+  if(pb)pb.classList.toggle("show",_statTab==="detail");
+}
+
+/* ---------- ★ v2.9.9：逐手牌明细（点统计表某一行展开） ----------
+   统计表是「按人聚合」的，看不出他到底打了哪几手；明细把 score_log 的原始行
+   按时间倒序列出来，时间精确到毫秒，并列出这一手算了哪些番种。            */
+let DETAIL_UK="";
+function statRowClick(ev){
+  const tr=(ev.target&&ev.target.closest)?ev.target.closest("tr"):null;
+  if(!tr)return;
+  const uk=tr.getAttribute("data-uk")||"";
+  if(!uk)return;
+  if(DETAIL_UK===uk){closeDetail();return;}   /* 再点同一行 = 收起 */
+  openDetail(uk);
+}
+function closeDetail(){
+  DETAIL_UK="";
+  const d=el("statdetail");
+  /* ★ v2.9.11：显隐由「统计 / 明细」标签页管（原来是自己控制 display） */
+  if(d)d.innerHTML='<div class="tip">在「统计」页点一个人的那一行，这里就显示他的逐手明细。</div>';
+}
+function openDetail(uk){
+  DETAIL_UK=uk;
+  const d=el("statdetail");
+  if(!d)return;
+  showStatTab("detail");        /* ★ v2.9.11：点统计表某行 → 自动切到「明细」页 */
+  d.innerHTML='<div class="tip">正在读取明细…</div>';
+  const day=(el("statday")&&el("statday").value)||"";
+  const q="user_key="+encodeURIComponent(uk)+(day?"&day="+encodeURIComponent(day):"");
+  api("/api/stats_detail?"+q).then(j=>{
+    if(DETAIL_UK!==uk)return;                 /* 期间又点了别人 → 丢弃这次结果 */
+    d.innerHTML=(!j||j.ok===false)
+      ? '<div class="tip">明细读取失败：'+esc((j&&j.error)||"未知错误")+'</div>'
+      : detailHtml(j);
+  }).catch(e=>{
+    if(DETAIL_UK!==uk)return;
+    d.innerHTML='<div class="tip">明细读取失败：'+esc(e)+'</div>';
+  });
+}
+/* 毫秒级时间：2026/10/9 00:12:33.456 */
+function msTime(ts){
+  if(!ts)return "-";
+  const d=new Date(ts/1);
+  return d.toLocaleString("zh-CN")+"."+String(ts%1000).padStart(3,"0");
+}
+function detailHtml(j){
+  const rows=j.rows||[];
+  let h='<div style="margin:8px 0 4px;font-weight:600">逐手明细'
+       +'　<span style="font-weight:400;color:#6b7684">'+esc(j.user_key||"")
+       +'　'+rows.length+' 手'+(j.day?("　"+esc(j.day)):"（全部日期）")+'</span></div>';
+  if(j.fans&&j.fans.length)
+    h+='<div class="tip">这个人打出的番种：'
+      +j.fans.map(f=>esc(f.name)+"×"+f.cnt).join("、")+'</div>';
+  if(!rows.length){h+='<div class="tip">没有明细记录。</div>';return h;}
+  /* ★ v2.9.10：只画「设置 → 明细列」里勾上的那几列 */
+  const cur=detailCols();
+  h+='<div style="max-height:240px;overflow:auto"><table><thead><tr>'
+    +DETAIL_COLS_DEF.filter(d=>cur.indexOf(d.k)>=0)
+      .map(d=>"<th>"+esc(d.n)+"</th>").join("")
+    +'</tr></thead><tbody>';
+  rows.forEach(r=>{
+    h+='<tr>'+cur.map(k=>"<td>"+detailCell(k,r)+"</td>").join("")+'</tr>';
+  });
+  return h+'</tbody></table></div>';
+}
+/* ★ v2.9.10：明细单元格按列 key 取值（与统计表的 statCell 一一对应） */
+function detailCell(k,r){
+  switch(k){
+    case "day":    return esc(r.day||"-");
+    case "time":   return esc(msTime(r.ts_ms));
+    case "ctype":  return r.client_type==="desktop"?"桌面":"Web";
+    case "ip":     return esc(r.ip||"-");
+    case "ua":     return '<span style="font-size:12px" title="'+esc(r.ua||"")+'">'
+                     +esc(uaBrief(r.ua))+"</span>";
+    case "fan":    return String(r.total_fan||0);
+    case "base":   return String(r.base||0);
+    case "reach":  return r.reach?"是":"否";
+    case "fans_n": return String(r.fans_n||0);
+    case "fans":   {const fs=(r.fans||"").split("|").filter(s=>s.trim());
+                    const t=fs.join("、")||"-";
+                    return '<span title="'+esc(t)+'">'+esc(t)+"</span>";}
+    /* ★ v2.9.12：明细里的 nick 是「这一手牌时」的昵称（改名不改历史），
+       os/browser/dev 由服务端算好塞进来 */
+    case "nick":    return nickHtml(r.nick);
+    case "os":      return '<span style="font-size:12px">'+esc(r.os||"-")+"</span>";
+    case "browser": return '<span style="font-size:12px">'+esc(r.browser||"-")+"</span>";
+    case "dev":     return '<span style="font-size:12px" title="'+esc(r.dev||"")+'">'
+                     +esc(r.dev||"-")+"</span>";
+  }
+  return "";
+}
+function _todayStr(){
+  const t=new Date();
+  return t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0");
+}
+function fillStatDays(){
+  const sel=el("statday");
+  if(!sel)return;
+  const today=_todayStr();
+  sel.innerHTML='<option value="">全部日期</option><option value="'+today+'">今天（'+today+'）</option>';
+}
+function loadStats(){
+  const day=el("statday")?el("statday").value:"";
+  api("/api/stats?day="+encodeURIComponent(day||"")).then(j=>{
+    if(!j||j.ok===false){el("statsum").textContent="加载失败";return;}
+    const sum=j.summary||{hands:0,fan:0,users:0};
+    /* ★ v2.9.9：汇总行带上全局番种榜（「无番和×3、碰碰和×1」） */
+    el("statsum").textContent="共 "+sum.hands+" 手 / "+sum.fan+" 番 / "+sum.users+" 人"
+      +(sum.fans_txt?"　番种："+sum.fans_txt:"");
+    const tb=el("statbody"); tb.innerHTML="";
+    closeDetail();                 /* 换日期 / 刷新 → 明细区收起，避免停在旧数据上 */
+    const cur=statCols();          /* ★ v2.9.7：只画「设置」里勾上的那几列 */
+    (j.users||[]).forEach(u=>{
+      const tr=document.createElement("tr");
+      tr.setAttribute("data-uk",u.user_key||"");   /* ★ v2.9.9：点这一行看明细 */
+      tr.innerHTML=cur.map(k=>"<td>"+statCell(k,u)+"</td>").join("");
+      tb.appendChild(tr);
+    });
+    if(!(j.users||[]).length)
+      tb.innerHTML='<tr><td colspan="'+Math.max(cur.length,1)+
+        '" style="text-align:center;color:#999">暂无数据</td></tr>';
+  }).catch(e=>{el("statsum").textContent="加载失败："+e.message;});
+}
+function seedLive(){
+  fillStatDays();
+  api("/api/stats?day="+encodeURIComponent(_todayStr())).then(j=>{
+    liveTotal=0;liveCount=0;
+    (j&&j.users||[]).forEach(u=>{if(u.uuid===MY_UUID){liveTotal+=u.total_fan||0;liveCount+=u.cnt||0;}});
+    updateLive();
+  }).catch(()=>{updateLive();});
+}
+
 /* ---------- 启动 ---------- */
 (async function(){
   loadToken();
+  MY_UUID=clientUUID();
+  loadNick();probeModel();             /* ★ v2.9.12 恢复昵称 + 试着问出设备型号 */
   setLayout(loadLayout(),false);       /* ★ v2.7.8 恢复上次选的布局档位（默认「经典」）；内部会填下拉框 */
   applyBtnSize(loadBtnSize(),false);   /* ★ v2.7.6 恢复上次的按键大小（默认「最小」＝老样子）；内部会填下拉框 */
+  loadSpeak();markSpeak();             /* ★ v2.9.0 恢复「读番」开关（默认关） */
+  loadVoicePack();                     /* ★ v2.9.3 恢复「语音包」选择（默认服务器端那套） */
+  renderStatColBoxes();buildStatHead();/* ★ v2.9.7 恢复「统计列」勾选 + 生成表头 */
+  renderDetailColBoxes();             /* ★ v2.9.10 恢复「明细列」勾选 */
+  /* ★ v2.9.9：统计表用**事件委托**接点击（行是后画的，不能逐个绑） */
+  {const sb=el("statbody"); if(sb&&sb.addEventListener)sb.addEventListener("click",statRowClick);}
   updateJumpBtns();                    /* ★ v2.7.9 底部跳转按钮：没得滚就置灰 */
   try{
     const h=await api("/api/health");
     el("st").textContent="已连接";
   }catch(e){el("st").textContent="未连接";}
   render();
+  seedLive();
   autoSize();
   document.addEventListener("keydown",e=>{
-    if(e.key==="Escape")S.pending=[]&&render();
+    /* ★ v2.9.4：Esc 先把「设置 / 口令」弹窗关掉，再取消待选吃 */
+    if(e.key==="Escape"){hideSet();hideDlg();S.pending=[]&&render();}
   });
 })();
 </script></body></html>"""
@@ -1040,7 +1871,9 @@ DEBUG_HTML = r"""<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <h2>__APP__ · 接口自测</h2>
 <p>Web 客户端在 <a href="/">/</a>；接口说明见 <a href="/api/help">/api/help</a></p>
 <p>端点：<code>/api/health</code> <code>/api/version</code> <code>/api/tiles</code>
-<code>/api/fan_table</code> <code>/api/score</code> <code>/api/waits</code></p>
+<code>/api/fan_table</code> <code>/api/score</code> <code>/api/waits</code>
+<code>/api/readout</code> <code>/audio/&lt;文件名&gt;</code>
+<code>/audio/&lt;语音包&gt;/&lt;文件名&gt;</code></p>
 <textarea id="req">{
   "melds": [{"kind":"chi","tiles":["W1","W2","W3"]}],
   "concealed": ["W4","W5","W6","T2","T3","T4","B5","B6","B7","B9","B9"],
@@ -1049,6 +1882,8 @@ DEBUG_HTML = r"""<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 }</textarea><br>
 <button onclick="call('/api/score')">算番 /api/score</button>
 <button onclick="call('/api/waits')">听牌 /api/waits</button>
+<button onclick="load('/api/readout?total=123')">读番 /api/readout?total=123</button>
+<button onclick="load('/api/readout?total=123&set=女声')">读番（换语音包 /api/readout?total=123&amp;set=女声）</button>
 <button onclick="load('/api/tiles')">牌张表</button>
 <button onclick="load('/api/fan_table')">番种表</button>
 <button onclick="load('/api/version')">版本</button>
@@ -1074,8 +1909,8 @@ async function load(path){
 </script></html>"""
 
 MANIFEST = {
-    "name": APP_NAME + " · Web 版",
-    "short_name": "麻将算番",
+    "name": WEB_TITLE,
+    "short_name": "算番客户端",
     "start_url": "./",
     "display": "standalone",
     "background_color": "#f4f6fa",
@@ -1084,16 +1919,44 @@ MANIFEST = {
 }
 
 
-def render_web_client(app_name: str = APP_NAME, show=()) -> str:
-    """生成 Web 客户端页面（★ v2.7.5）
+def render_web_client(app_name: str = APP_NAME, show=(), speak_default: bool = True,
+                      voice_set=None, voice_sets=None, stats_cols=None,
+                      detail_cols=None) -> str:
+    """生成 Web 客户端页面（★ v2.7.5；★ v2.9.1 加 `speak_default`；★ v2.9.3 加语音包）
 
-    两件事：① 填应用名；② 决定模式行里「接口自测页 / 换口令」两个按钮**显示还是隐藏**（见 WEB_SHOW_ITEMS）。
-    `show` 里的键对应 WEB_SHOW_ITEMS；不在里面的就写成 `display:none`（**默认都不显示**）。
+    四件事：① 填应用名；② 决定模式行里「接口自测页 / 换口令」两个按钮**显示还是隐藏**（见 WEB_SHOW_ITEMS）；
+    ③ ★ v2.9.1 把「默认开启自动读番」写进页面（`SPEAK_DEFAULT`），页面据此决定「🔊 读番」默认开不开；
+    ④ ★ v2.9.3 把**可选语音包**与**服务器端默认那套**写进页面（`VOICE_SETS` / `VOICE_SET`），
+    页面上的「语音：」下拉据此列出可选项 —— 服务器端一改，手机/平板刷新页面就跟着变。
+    ⑤ ★ v2.9.7 把**统计面板可用列**与**服务器端默认显示哪几列**写进页面
+    （`STATS_COL_DEF` / `STATS_COL_DEFAULT`），手机在本页「设置」里改过就以那台设备为准。
     """
     on = set(show or ())
     html = WEB_CLIENT.replace("__APP__", app_name)
+    # ★ v2.9.7：Web 客户端标题固定叫「国标算番器客户端」（浏览器标签与页头都用它）
+    html = html.replace("__APP_TITLE__", WEB_TITLE)
     html = html.replace("__SHOW_DEBUG__", "" if "debug" in on else "display:none")
     html = html.replace("__SHOW_TOKEN__", "" if "token" in on else "display:none")
+    html = html.replace("__SPEAK_DEFAULT__", "true" if speak_default else "false")
+    packs = [str(s["name"]) if isinstance(s, dict) else str(s)
+             for s in (voice_sets or ())]
+    cur = resolve_voice_dir(voice_set, None)
+    cur_name = voice_set_of(cur)
+    html = html.replace("__VOICE_SETS__", json.dumps(packs, ensure_ascii=True))
+    html = html.replace("__VOICE_SET__", json.dumps(cur_name, ensure_ascii=True))
+    html = html.replace("__VOICE_SET_HIDE__", "" if packs else "display:none")
+    # ★ v2.9.7：统计列（全部可选项 + 服务器端默认显示的那几列）
+    html = html.replace("__STATS_COL_DEF__", json.dumps(
+        [{"k": k, "n": n} for k, n in STATS_COL_ITEMS], ensure_ascii=True))
+    html = html.replace("__STATS_COL_DEFAULT__", json.dumps(
+        list(stats_cols_normalize(stats_cols, STATS_COLS_WEB_DEFAULT)),
+        ensure_ascii=True))
+    # ★ v2.9.10：明细列（全部可选项 + 服务器端默认显示的那几列）
+    html = html.replace("__DETAIL_COL_DEF__", json.dumps(
+        [{"k": k, "n": n} for k, n in DETAIL_COL_ITEMS], ensure_ascii=True))
+    html = html.replace("__DETAIL_COL_DEFAULT__", json.dumps(
+        list(detail_cols_normalize(detail_cols, DETAIL_COLS_WEB_DEFAULT)),
+        ensure_ascii=True))
     return html
 
 
@@ -1112,6 +1975,37 @@ def _tile_image_bytes(name: str) -> Optional[bytes]:
     return None
 
 
+def _voice_file_bytes(name: str, voice_dir: Optional[str]) -> Optional[bytes]:
+    """把指定语音包里的读番音频读出来给 Web 客户端播（白名单文件名，防目录穿越）
+
+    ★ v2.9.13：整句语音包会把录音按数字段分目录放（`女声\\100-199\\123.mp3`），
+    只在包根目录找会 404 —— 根目录没有就再看它下面一层（和 `_pack_clip_count()` 同一口径）。
+    """
+    if not voice_dir or not voice_name_ok(name):
+        return None
+    p = os.path.join(voice_dir, name)
+    if not os.path.exists(p):                       # 根目录没有 → 往下看一层
+        try:
+            for sub in sorted(os.listdir(voice_dir)):
+                cand = os.path.join(voice_dir, sub, name)
+                if os.path.isdir(os.path.join(voice_dir, sub)) and os.path.exists(cand):
+                    p = cand
+                    break
+        except OSError:
+            return None
+    if not os.path.exists(p):
+        return None
+    try:
+        with open(p, "rb") as fp:
+            return fp.read()
+    except OSError:
+        return None
+
+
+def _voice_mime(name: str) -> str:
+    return "audio/wav" if name.lower().endswith(".wav") else "audio/mpeg"
+
+
 # ★ v2.7.4：客户端（手机/平板浏览器）「提前断开」时会抛这几个异常 —— 属于正常现象，
 #   不当错误处理（见下方 Handler.handle_one_request / QuietHTTPServer.handle_error）
 CLIENT_GONE_ERRORS = (ConnectionResetError, ConnectionAbortedError,
@@ -1125,6 +2019,8 @@ class Handler(BaseHTTPRequestHandler):
     token: str = ""
     anon: tuple = ()               # ★ v2.5.0 免口令分组（见 ANON_GROUPS）
     show: tuple = ()               # ★ v2.7.5 Web 页面上要显示的可选按钮（见 WEB_SHOW_ITEMS）
+    speak_default: bool = True     # ★ v2.9.1 Web 页面「🔊 读番」默认开不开（桌面端设置）
+    voice_set: str = ""            # ★ v2.9.3 Web 页面「语音：」下拉的默认选项（桌面端设置）
 
     # ---- 基础
     def log_message(self, fmt, *args):        # noqa: A003
@@ -1147,7 +2043,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Api-Token")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 
-    def _send(self, obj, status: int = 200, ctype: str = "application/json; charset=utf-8"):
+    def _send(self, obj, status: int = 200, ctype: str = "application/json; charset=utf-8",
+              no_store: bool = False):
         if isinstance(obj, (dict, list)):
             body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
         else:
@@ -1155,6 +2052,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        if no_store:
+            # ★ v2.9.6：HTML 页面一律不缓存。否则程序已经升级到新版本，手机浏览器还拿着
+            #   昨天那份旧页面——新加的按钮（比如「统计」）就永远显示不出来，
+            #   看起来像「功能没实现」，实际只是页面没更新。
+            self.send_header("Cache-Control", "no-store, max-age=0")
         self._cors()
         self.end_headers()
         try:
@@ -1207,6 +2109,134 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError("请求体必须是 JSON 对象")
         return data
 
+    # ---- 统计（★ v2.9.6）
+    def _record_score(self, out: dict, body: dict) -> None:
+        """把一次算番结果落库。失败仅记日志，绝不抛异常影响算番主流程。"""
+        stats = getattr(self, "stats", None)
+        if stats is None or not isinstance(out, dict):
+            return
+        try:
+            uuid = (str(body.get("uuid") or "").strip()
+                    or (self.headers.get("X-Client-UUID") or "").strip())
+            ip = self.client_address[0] if self.client_address else ""
+            ua = self.headers.get("User-Agent") or ""
+            uk = user_key_from(uuid, ip, ua)
+            ts_ms = int(time.time() * 1000)
+            total = int(out.get("total") or 0)
+            base = int(out.get("base") or 0)
+            reach = 1 if out.get("reach_standard") else 0
+            fans_n = len(out.get("fans") or [])
+            # 去重签名：同一手牌（UUID + 牌 + 和张）2 秒内重复请求不重复记
+            sig = hand_sig(uuid,
+                           json.dumps(body.get("concealed"), ensure_ascii=False),
+                           json.dumps(body.get("melds"), ensure_ascii=False),
+                           body.get("win") or "")
+            # ★ v2.9.12：客户端上报的昵称 / 设备型号
+            #   型号：navigator.userAgentData.getHighEntropyValues(['model']) 拿到的，
+            #   比 UA 解析准（UA 在安卓 16+ 被削减成 "K"）。局域网明文 http 多半拿不到，
+            #   拿不到就是空串，退回 UA 解析，不影响别的。
+            nick = str(body.get("nick") or "").strip()[:24]
+            model = str(body.get("model") or "").strip()[:40]
+            if nick:
+                # 走一遍冲突处理：同名同 IP 过户、异 IP 加 #N，拿回真正生效的名字
+                nick = stats.set_nick(uk, ip, nick)
+            stats.record(ts_ms=ts_ms, user_key=uk, uuid=uuid, client_type="web",
+                         ip=ip, ua=ua, total_fan=total, base=base,
+                         reach=reach, fans_n=fans_n, sig=sig,
+                         # ★ v2.9.9：番种名落库（明细里能看到这一手算了哪些番）
+                         fans=fans_text(out.get("fans")),
+                         # ★ v2.9.12
+                         model=model, nick=nick)
+        except Exception as exc:             # noqa: BLE001
+            try:
+                sys.stderr.write("[stats] 记录算番失败：%r\n" % (exc,))
+            except Exception:
+                pass
+
+    def _stats_json(self) -> dict:
+        """GET /api/stats 的返回（★ v2.9.6）：按天聚合的全部用户统计。
+
+        ?day=YYYY-MM-DD 限定某天；不带 day 则统计全部日期（按用户跨天合计）。
+        """
+        stats = getattr(self, "stats", None)
+        if stats is None:
+            return {"ok": False, "error": "统计库不可用"}
+        q = parse_qs(urlparse(self.path).query)
+        day = (q.get("day") or [""])[0].strip() or None
+        return {"ok": True, "day": day,
+                "summary": stats.total_summary(day),
+                "users": stats.aggregate(day)}
+
+    def _stats_detail_json(self) -> dict:
+        """GET /api/stats_detail?user_key=…&day=…（★ v2.9.9）：某个用户的逐手牌明细
+
+        不带 day = 全部日期。返回 `rows`（时间倒序）+ 该用户的番种榜 `fans`。
+        user_key 是必填；拿不到就给 ok:false（前端弹提示，不要静默空表）。
+        """
+        stats = getattr(self, "stats", None)
+        if stats is None:
+            return {"ok": False, "error": "统计库不可用"}
+        q = parse_qs(urlparse(self.path).query)
+        uk = (q.get("user_key") or [""])[0].strip()
+        day = (q.get("day") or [""])[0].strip() or None
+        if not uk:
+            return {"ok": False, "error": "缺少 user_key"}
+        try:
+            rows = stats.detail_rows(uk, day)
+            fans = [{"name": n, "cnt": c} for n, c in stats.fans_top(day, uk)]
+        except Exception as exc:       # noqa: BLE001
+            return {"ok": False, "error": "读取明细失败：%r" % (exc,)}
+        return {"ok": True, "user_key": uk, "day": day, "rows": rows,
+                "fans": fans}
+
+    def _set_nick_json(self, body: Optional[dict] = None) -> dict:
+        """POST /api/set_nick（★ v2.9.12）：客户端上报「我叫什么」
+
+        请求体 {uuid, nick}；空 nick = 取消昵称。
+        返回 **实际生效**的名字 `nick` —— 可能带 #2/#3 后缀（撞名且不同 IP 时），
+        前端要把它回写进 localStorage，否则用户看到的和实际显示的不一样。
+
+        ★ body 由 do_POST 传进来：请求体只能读一次，这里再 `self._json_body()`
+          会读不到东西（do_POST 已经读过了）。
+        """
+        stats = getattr(self, "stats", None)
+        if stats is None:
+            return {"ok": False, "error": "统计库不可用"}
+        if body is None:
+            try:
+                body = self._json_body()
+            except ApiError as exc:
+                return {"ok": False, "error": str(exc)}
+        uuid = (str(body.get("uuid") or "").strip()
+                or (self.headers.get("X-Client-UUID") or "").strip())
+        ip = self.client_address[0] if self.client_address else ""
+        ua = self.headers.get("User-Agent") or ""
+        uk = user_key_from(uuid, ip, ua)
+        raw = str(body.get("nick") or "").strip()[:24]
+        try:
+            nick = stats.set_nick(uk, ip, raw)
+        except Exception as exc:              # noqa: BLE001
+            sys.stderr.write("[stats] 设置昵称失败：%r\n" % (exc,))
+            return {"ok": False, "error": "设置昵称失败"}
+        return {"ok": True, "user_key": uk, "nick": nick}
+
+    def _query_readout(self) -> dict:
+        """读番的 GET 查询串 → 与 POST 相同的结构（/api/readout?total=123&speak=1&set=女声）"""
+        q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+        body: dict = {}
+        for key in ("total", "n"):
+            if key in q:
+                body["total"] = q[key]
+                break
+        for key in ("prefix", "speak"):
+            if key in q:
+                body[key] = str(q[key]).lower() in ("1", "true", "yes", "on")
+        for key in ("set", "voice_set", "pack"):        # ★ v2.9.3 选语音包
+            if key in q:
+                body["set"] = q[key]
+                break
+        return body
+
     def _query_body(self) -> dict:
         """把 GET 查询串转成与 POST 相同的结构"""
         q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
@@ -1258,11 +2288,21 @@ class Handler(BaseHTTPRequestHandler):
             return
         # ---- 静态资源
         if path in ("/", "/web", "/index.html"):
-            return self._send(render_web_client(APP_NAME, getattr(self, "show", ())),
-                              ctype="text/html; charset=utf-8")
+            return self._send(render_web_client(APP_NAME, getattr(self, "show", ()),
+                                                bool(getattr(self, "speak_default", True)),
+                                                voice_set=getattr(self, "voice_set", ""),
+                                                voice_sets=voice_sets(
+                                                    getattr(self.engine, "base_dir", None)),
+                                                # ★ v2.9.7：统计面板默认显示哪几列
+                                                stats_cols=getattr(
+                                                    self, "stats_cols", None),
+                                                # ★ v2.9.10：明细面板默认显示哪几列
+                                                detail_cols=getattr(
+                                                    self, "detail_cols", None)),
+                              ctype="text/html; charset=utf-8", no_store=True)
         if path == "/debug":
             return self._send(DEBUG_HTML.replace("__APP__", APP_NAME),
-                              ctype="text/html; charset=utf-8")
+                              ctype="text/html; charset=utf-8", no_store=True)
         if path == "/manifest.webmanifest":
             return self._send(MANIFEST,
                               ctype="application/manifest+json; charset=utf-8")
@@ -1297,6 +2337,31 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:                 # noqa: BLE001
                 pass
             return
+        # ★ v2.9.0：读番音频（和牌面图一样按白名单放行，手机端直接播）
+        # ★ v2.9.3：支持 `/audio/<语音包>/<文件>`（页面选了哪套就取哪套）；不带包名就用服务器的当前套
+        if path.startswith("/audio/"):
+            rest = path[len("/audio/"):]
+            head, _, tail = rest.rpartition("/")
+            pack, name = (head, tail) if head else ("", tail)
+            pack, name = unquote(pack), unquote(name)
+            data = _voice_file_bytes(name, self.engine.voice_dir(pack or None))
+            if data is None:                      # 有些客户端直接把中文按原字节发过来
+                raw = unquote(head.encode("latin-1", "ignore").decode("utf-8", "ignore"))
+                name = unquote(tail.encode("latin-1", "ignore").decode("utf-8", "ignore"))
+                data = _voice_file_bytes(name, self.engine.voice_dir(raw or None))
+            if data is None:
+                return self._fail("找不到读番音频：%s（见 /api/help）" % name, 404)
+            self.send_response(200)
+            self.send_header("Content-Type", _voice_mime(name))
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self._cors()
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except Exception:                 # noqa: BLE001
+                pass
+            return
         try:
             if path == "/api/help":
                 return self._send(HELP_TEXT, ctype="text/plain; charset=utf-8")
@@ -1309,10 +2374,19 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/fan_table":
                 return self._send({"ok": True, "table": self.engine.fan_table()})
             if path == "/api/score":
-                return self._send(self.engine.score(self._query_body()))
+                body = self._query_body()
+                out = self.engine.score(body)
+                self._record_score(out, body)
+                return self._send(out)
+            if path == "/api/stats":
+                return self._send(self._stats_json())
+            if path == "/api/stats_detail":      # ★ v2.9.9 逐手牌明细
+                return self._send(self._stats_detail_json())
             if path in ("/api/waits", "/api/wins", "/api/waits_all"):
                 return self._send(self.engine.waits(self._query_body(),
                                                     only_reach=path != "/api/waits_all"))
+            if path == "/api/readout":             # ★ v2.9.0 读番（GET 简写形式）
+                return self._send(self.engine.readout_request(self._query_readout()))
             self._fail("未知接口：%s（见 /api/help）" % path, 404)
         except ApiError as exc:
             self._fail(exc.message, exc.status)
@@ -1326,10 +2400,16 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = self._body()
             if path == "/api/score":
-                return self._send(self.engine.score(body))
+                out = self.engine.score(body)
+                self._record_score(out, body)
+                return self._send(out)
             if path in ("/api/waits", "/api/wins", "/api/waits_all"):
                 return self._send(self.engine.waits(body,
                                                     only_reach=path != "/api/waits_all"))
+            if path == "/api/readout":             # ★ v2.9.0 读番
+                return self._send(self.engine.readout_request(body))
+            if path == "/api/set_nick":            # ★ v2.9.12 上报昵称
+                return self._send(self._set_nick_json(body))
             if path in ("/api/health", "/api/version"):
                 return self.do_GET()
             self._fail("未知接口：%s（见 /api/help）" % path, 404)
@@ -1364,7 +2444,11 @@ class ApiServer:
 
     def __init__(self, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
                  token: str = "", rules_path: Optional[str] = None,
-                 verbose: bool = False, anon=None, show=None):
+                 verbose: bool = False, anon=None, show=None,
+                 base_dir: Optional[str] = None, speak_default: bool = True,
+                 voice_set: Optional[str] = None,
+                 stats: Optional["StatsDB"] = None, stats_cols=None,
+                 detail_cols=None):
         self.host = host
         self.port = int(port)
         self.token = token or ""
@@ -1374,7 +2458,31 @@ class ApiServer:
         # ★ v2.7.5：Web 页面上要显示的可选按钮（接口自测页 / 换口令），默认都不显示
         self.show = tuple(WEB_SHOW_DEFAULT if show is None else show)
         self.verbose = verbose
-        self.engine = Engine(rules_path)
+        # ★ v2.9.0：base_dir＝算番器所在目录（读番找《数字》音频、规则表用）；None＝本文件所在目录
+        self.base_dir = base_dir or HERE
+        # ★ v2.9.1：Web 页面「🔊 读番」默认状态（桌面端「设置 → 通用 → 默认开启自动读番」传进来）
+        self.speak_default = bool(speak_default)
+        # ★ v2.9.3：服务器端默认用哪一套录音（桌面端「设置 → 通用 → 语音包」传进来；
+        #   空＝用默认包；页面上的「语音：」下拉初始值也用它）
+        self.voice_set = str(voice_set or "")
+        # ★ v2.9.7：Web 统计弹窗默认显示哪几列（桌面端「设置 → 通用 → 统计显示列」传进来；
+        #   手机自己在本页「设置」里改过就以那台设备为准，存在 localStorage）
+        self.stats_cols = stats_cols_normalize(stats_cols, STATS_COLS_WEB_DEFAULT)
+        # ★ v2.9.10：Web 明细面板默认显示哪几列（桌面端「设置 → 通用 → 明细显示列」传进来）
+        self.detail_cols = detail_cols_normalize(detail_cols,
+                                                 DETAIL_COLS_WEB_DEFAULT)
+        self.engine = Engine(rules_path, base_dir=self.base_dir,
+                             speak_default=self.speak_default, voice_set=self.voice_set)
+        # ★ v2.9.6：算番统计库（SQLite / WAL）。
+        #   优先用调用方传进来的实例（桌面端与 Web 端共用同一份文件）；
+        #   没传则在 base_dir 下新建。落库失败绝不能影响 API 主流程，所以这里兜底。
+        try:
+            if stats is None:
+                stats = StatsDB(os.path.join(self.base_dir, "mahjong_stats.db"))
+            self.stats = stats
+        except Exception as exc:      # noqa: BLE001
+            sys.stderr.write("[stats] 统计库初始化失败（不影响算番）：%r\n" % (exc,))
+            self.stats = None
         self._httpd: Optional[ThreadingHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -1402,7 +2510,12 @@ class ApiServer:
             return self.url
         handler = type("_Handler", (Handler,),
                        {"engine": self.engine, "token": self.token,
-                        "anon": self.anon, "show": self.show})
+                        "anon": self.anon, "show": self.show,
+                        "speak_default": self.speak_default,
+                        "stats": self.stats,
+                        # ★ v2.9.3：页面「语音：」下拉的默认项（解析后的真实包名）
+                        "voice_set": voice_set_of(
+                            resolve_voice_dir(self.voice_set, self.base_dir))})
         try:
             self._httpd = QuietHTTPServer((self.host, self.port), handler)
         except OSError as exc:
@@ -1443,6 +2556,14 @@ def lan_ip() -> str:
 
 
 def main(argv=None) -> int:
+    # ★ v2.9.1：`--help` / 横幅里若有 GBK 编不出的字符（emoji 等），
+    #   argparse 的 print_help 会直接抛 UnicodeEncodeError 把 `--help` 弄崩
+    #   （真踩过：help 文案里一个 🔊 就让 `python mahjong_api.py --help` 报错）。
+    #   这里尽量把 stdout 改成 UTF-8，和 mahjong_core.cli_main 一个做法；改不了就算了。
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:                         # noqa: BLE001
+        pass
     ap = argparse.ArgumentParser(description="%s · 本地 HTTP API" % APP_NAME)
     ap.add_argument("--host", default=DEFAULT_HOST,
                     help="监听地址，默认 %s（仅本机）；局域网请用 0.0.0.0" % DEFAULT_HOST)
@@ -1454,6 +2575,17 @@ def main(argv=None) -> int:
     ap.add_argument("--show", default=None,
                     help="Web 页面上要显示的按钮（逗号分隔）：debug（接口自测页）、"
                          "token（换口令）；默认**两个都不显示**")
+    ap.add_argument("--dir", default=None, metavar="目录",
+                    help="算番器所在目录（找《%s》读番音频、规则表）；"
+                         "默认＝本文件所在目录" % VOICE_DIR_NAME)
+    ap.add_argument("--speak-default", default="1", choices=("0", "1"), dest="speak_default",
+                    help="Web 页面上「读番」按钮默认开不开：1（默认）/ 0；"
+                         "页面自己点过就以页面上的选择为准")
+    ap.add_argument("--voice-set", "--set", default=None, metavar="语音包", dest="voice_set",
+                    help="读番用《%s》下哪一套录音（目录名）；默认「%s」。可选：%s"
+                         % (VOICE_DIR_NAME, VOICE_SET_DEFAULT,
+                            "、".join(voice_set_label(n) for n in voice_set_names())
+                            or "（没找到任何语音包）"))
     ap.add_argument("--verbose", action="store_true", help="打印访问日志")
     args = ap.parse_args(argv)
     if args.anon is None:
@@ -1468,7 +2600,9 @@ def main(argv=None) -> int:
         show = [k.strip() for k in str(args.show).split(",") if k.strip()]
 
     srv = ApiServer(args.host, args.port, args.token, verbose=args.verbose,
-                    anon=anon, show=show)
+                    anon=anon, show=show, base_dir=args.dir,
+                    speak_default=str(args.speak_default) != "0",
+                    voice_set=args.voice_set)
     try:
         url = srv.start()
     except ApiError as exc:
@@ -1487,6 +2621,18 @@ def main(argv=None) -> int:
               % ("、".join(anon) if anon else "无（全部要口令）"))
     print("  页面按钮  : %s（--show debug,token 可显示接口自测页 / 换口令）"
           % ("、".join(show) if show else "都不显示（默认）"))
+    vdir = srv.engine.voice_dir()
+    print("  读番音频  : /api/readout?total=123 → %s（%s）"
+          % (vdir or "没找到《%s》目录（用 --dir 指到程序目录）" % VOICE_DIR_NAME,
+             "本机可出声" if VoicePlayer.available() else "本机不能出声（非 Windows）"))
+    packs = voice_sets(args.dir)
+    print("  语音包    : 当前「%s」（%d 段）；可选：%s（--voice-set 名字 可换，"
+          "页面上的「语音：」下拉也能换）"
+          % (voice_set_label(voice_set_of(vdir)), count_voice_clips(args.dir, args.voice_set),
+             "、".join("%s(%d 段)" % (voice_set_label(str(s["name"])), s["clips"])
+                       for s in packs) or "（没找到任何语音包）"))
+    print("  自动读番  : 页面默认 %s（--speak-default 0 可关；页面自己点过就听页面的）"
+          % ("开启" if srv.speak_default else "关闭"))
     print("  JSON 接口: %s/api/help     接口自测页: %s/debug     按 Ctrl+C 结束"
           % (url, url))
     try:

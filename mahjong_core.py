@@ -31,10 +31,13 @@
 """
 from __future__ import annotations
 
+import ctypes
 import itertools
 import json
 import os
 import re
+import sys
+import threading
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
@@ -1681,6 +1684,531 @@ class MahjongFanCalculator:
         return rows
 
 
+# ================================================================ 读番（把总番念出来）
+#
+# ★ v2.9.0：算完番以后把「合计 N 番」念出来。音频是一段段现成的录音，放在**程序目录**的
+#   《数字》子目录里（桌面版 / API / 命令行共用同一套）。
+#   ★ v2.9.2 重录后：**文件名就是它读的那个词**（中文），于是「找哪个文件」不再靠对照表 ——
+#       · 单音节：零 一 二 三 四 五 六 七 八 九 十 百 千 万 / 合计 番
+#       · 连读词：一十 二十 … 九十 / 一百 二百 … 九百 / 百万（**整词一段录音**，念着更顺）
+#     读者先把番数读成中文词串，再**按「最长匹配」挑录音**：能对上整词就用整词
+#     （二十.mp3 / 一百.mp3 / 百万.mp3），对不上就逐字拆（一千 → 一 + 千、十万 → 十 + 万）。
+#     所以重录只要继续「一个文件读一个词」就自动生效，**增删片段都不用改代码**。
+#   ★ v2.9.3：《数字》里可以放**多套**录音 —— 一套一个子目录，**目录名就是语音包的名字**
+#     （`数字\鲸宝\`、`数字\女声\`…）。用户可以选用哪一套：桌面端「设置 → 通用 → 语音包」、
+#     Web 页面上的「语音：」下拉、命令行 `--voice-set 名字`、HTTP `/api/readout?set=名字`。
+#     老语音包的文件名是阿拉伯数字（`1.mp3`~`9.mp3`、`零.wav`）与连读词（`十万/百万/千万/亿`），
+#     新语音包是「一个文件＝一个词」（`一.mp3`、`一十.mp3`、`一百.mp3`…）—— **两套都认**。
+#   ★ 别的程序要用**不用复制这些音频**：把程序目录告诉它就行（进程内 `base_dir=`，
+#     命令行 `--dir 目录`，HTTP `/api/readout?total=N` 返回文件名与下载地址）。
+
+VOICE_DIR_NAME = "数字"
+# 默认语音包（★ v2.9.14 用户指定：服务器端与客户端读番默认都改用「女声」整句包）
+VOICE_SET_DEFAULT = "女声"
+
+# 中文数字/单位字（含单位「亿」：有的语音包没有，读到亿时会如实报 missing）
+VOICE_WORD_CHARS = "零一二三四五六七八九十百千万亿"
+# 合法音频文件名：合计 / 番 / 1~4 个中文数字词 / 阿拉伯数字，扩展名 mp3 或 wav
+# （HTTP 的 /audio/<文件名> 就用它当白名单，不靠清单，重录加词也不用改）
+#   · 老语音包是**单个**阿拉伯数字（`1.mp3`～`9.mp3`）
+#   · ★ v2.9.13 起允许**多位**数字（`345.mp3`）—— 整句语音包「一个文件＝一整句」就用番数当文件名
+VOICE_NAME_RE = re.compile(r"^(?:[0-9]+|[%s]{1,4}|合计|番)\.(?:mp3|wav)$" % VOICE_WORD_CHARS)
+# 老语音包把数字录成阿拉伯数字文件名：`一` → `1.mp3`（查文件时按「先中文名、再阿拉伯数字」试）
+VOICE_DIGIT_ALIAS = {"零": "0", "一": "1", "二": "2", "三": "3", "四": "4",
+                     "五": "5", "六": "6", "七": "7", "八": "8", "九": "9"}
+# 连读匹配的最长字数：先试 4 个字，再 3 个、2 个，最后 1 个
+# （当前素材最长 2 个字：二十 / 一百 / 百万；留到 4 是为了以后录「一千零一」这种整句也不用改代码）
+VOICE_MERGE_MAX = 4
+# 音频扩展名（按顺序找）
+VOICE_EXTS = (".mp3", ".wav")
+
+_CN_DIGITS = "零一二三四五六七八九"
+_CN_GROUPS = ("", "万", "亿", "万亿")
+
+# ★ Windows 自带 MCI（winmm.dll）就能放 mp3 / wav，**不用装任何第三方库**，
+#   也不用 QtMultimedia（打包时不必额外带 Qt 多媒体插件）。其它系统静默降级。
+if sys.platform == "win32":
+    try:
+        _WINMM = ctypes.WinDLL("winmm")
+        _WINMM.mciSendStringW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p,
+                                          ctypes.c_uint, ctypes.c_void_p]
+        _WINMM.mciSendStringW.restype = ctypes.c_uint
+    except Exception:      # noqa: BLE001
+        _WINMM = None
+else:
+    _WINMM = None
+
+
+def _read_group4(n: int, first: bool = False) -> List[str]:
+    """读 1~9999 的四个位（不带单位）：1234 → ['一','千','二','百','三','十','四']
+
+    10~19 按标准读法省掉前面的「一」：15 → ['十','五']；中间的 0 补一个「零」。
+    ★ v2.9.2：`first`＝这一段是不是**整串数字的开头**（最高位那一组）。
+      省「一」只在开头那组成立：15 → 十五、110 → 一百一十、**10010 → 一万零一十**
+      （素材里专门录了「一十.mp3」，正是给「一百一十 / 一万零一十」这种位置用的）。
+    """
+    out: List[str] = []
+    zero_pending = False
+    for word, value in (("千", 1000), ("百", 100), ("十", 10)):
+        digit, n = divmod(n, value)
+        if digit == 0:
+            if out:                       # 前面已有非零位 → 后面若还有数就要补「零」
+                zero_pending = True
+            continue
+        if zero_pending:
+            out.append("零")
+            zero_pending = False
+        if not (word == "十" and digit == 1 and first and not out):
+            out.append(_CN_DIGITS[digit])
+        out.append(word)
+    if n:
+        if zero_pending:
+            out.append("零")
+        out.append(_CN_DIGITS[n])
+    return out
+
+
+def number_words(n: int) -> List[str]:
+    """把非负整数读成中文词表：123 → ['一','百','二','十','三']；0 → ['零']"""
+    n = int(n)
+    if n < 0:
+        raise ValueError("读番只支持非负整数，收到 %d" % n)
+    if n == 0:
+        return ["零"]
+    groups: List[int] = []
+    x = n
+    while x > 0:
+        groups.append(x % 10000)
+        x //= 10000
+    if len(groups) > len(_CN_GROUPS):
+        raise ValueError("数字太大，读番只支持到 %d" % (10 ** (4 * len(_CN_GROUPS)) - 1))
+    out: List[str] = []
+    top = len(groups) - 1
+    for i in range(top, -1, -1):
+        g = groups[i]
+        if g == 0:
+            continue
+        if out and g < 1000:              # 一万零一 / 一亿零十万
+            out.append("零")
+        out.extend(_read_group4(g, first=(i == top)))
+        if _CN_GROUPS[i]:
+            out.append(_CN_GROUPS[i])
+    # ★ v2.9.2：这里**不再**把「十+万」并成「十万」——连读交给 resolve_voice_files()
+    #   按「有没有这段录音」去挑（百万.mp3 有就用整词，十万 没有就拆成 十 + 万）。
+    return out
+
+
+def fan_readout_words(total: int, prefix: bool = True) -> List[str]:
+    """番数的念法词表（逐词的中文读法）：123 → ['合计','一','百','二','十','三','番']"""
+    return (["合计"] if prefix else []) + number_words(total) + ["番"]
+
+
+def voice_name_ok(name: str) -> bool:
+    """这个名字是不是合法的读番音频文件（HTTP 白名单用；防目录穿越靠它不含 / \\ 与 ..）"""
+    return bool(name) and "/" not in name and "\\" not in name and bool(VOICE_NAME_RE.match(name))
+
+
+def _clip_names(word: str) -> List[str]:
+    """一个词可能的文件名（不含扩展名）：先按词本身，再退回老语音包的阿拉伯数字写法（一→1）"""
+    names = [word]
+    alias = VOICE_DIGIT_ALIAS.get(word)
+    if alias:
+        names.append(alias)
+    return names
+
+
+def _voice_file(word: str, voice_dir: Optional[str]) -> Optional[str]:
+    """找一个「词」的录音（新包 `二十.mp3` / 老包 `1.mp3`）；都没有就返回 None"""
+    if not voice_dir or not word:
+        return None
+    for stem in _clip_names(word):
+        for ext in VOICE_EXTS:
+            p = os.path.join(voice_dir, stem + ext)
+            if os.path.exists(p):
+                return p
+    return None
+
+
+def _voice_phrase_file(total: int, voice_dir: Optional[str]) -> Optional[str]:
+    """★ v2.9.13 整句语音包：一个文件＝一整句「合计 N 番」，**文件名就是番数**（`345.mp3`）
+
+    命中就只播这一段（不再逐词拼接）；没有就返回 None，让上层回退到逐词组合（鲸宝那套）。
+    会连子目录一起找 —— 整句包通常按数字段分目录放（`女声\\300\\345.mp3`）。
+    """
+    if not voice_dir:
+        return None
+    stem = str(int(total))
+    for ext in VOICE_EXTS:                       # 先试包根目录（扁平布局）
+        p = os.path.join(voice_dir, stem + ext)
+        if os.path.exists(p):
+            return p
+    try:                                         # 再递归找子目录（分段布局）
+        top = os.path.abspath(voice_dir)
+        for root, _dirs, files in os.walk(voice_dir):
+            if os.path.abspath(root) == top:
+                continue
+            for ext in VOICE_EXTS:
+                if (stem + ext) in files:
+                    return os.path.join(root, stem + ext)
+    except OSError:
+        return None
+    return None
+
+
+def voice_set_ok(name: str) -> bool:
+    """语音包名是否合法 —— 它就是**一个目录名**（HTTP 的 `set=` 直接用，这里挡掉目录穿越）"""
+    n = str(name or "").strip()
+    return bool(n) and n not in (".", "..") and "/" not in n and "\\" not in n
+
+
+def voice_set_label(name: str) -> str:
+    """语音包的显示名（《数字》根目录直接放音频那套没有目录名，界面上给个说明）"""
+    n = str(name or "").strip()
+    return n if n else "（%s 根目录）" % VOICE_DIR_NAME
+
+
+def clip_count(voice_dir: Optional[str]) -> int:
+    """这个目录里现有几段可用录音（0 ＝ 不是语音目录）—— **只数这一层，不递归**
+
+    ★ v2.9.13：递归不能无脑加 —— 会把「项目根目录」也误判成语音包（下属子目录里到处是 mp3）。
+    整句包那种「按数字段分目录放」的情况，交给 `_pack_clip_count()` 处理。
+    """
+    if not voice_dir:
+        return 0
+    try:
+        return len([n for n in os.listdir(voice_dir) if voice_name_ok(n)])
+    except OSError:
+        return 0
+
+
+def _pack_clip_count(voice_dir: Optional[str]) -> int:
+    """一个**语音包**里现有几段录音：包根目录自己有就数它；根目录是空的，
+    再看它下面一层（整句包 `女声\\0-99\\`、`女声\\300\\`… 就长这样）
+
+    只往下看**一层**，不会再深挖 —— 既认得出分段布局，又不会把别的目录误当语音包。
+    """
+    if not voice_dir:
+        return 0
+    n = clip_count(voice_dir)
+    if n:
+        return n
+    try:
+        for name in os.listdir(voice_dir):
+            sub = os.path.join(voice_dir, name)
+            if os.path.isdir(sub):
+                n += clip_count(sub)
+    except OSError:
+        return n
+    return n
+
+
+def _explicit_voice_dir(base_dir: Optional[str]) -> Optional[str]:
+    """调用方是不是**直接把某一套录音目录指过来了**（`--dir …\\数字\\鲸宝`）"""
+    if not base_dir:
+        return None
+    b = os.path.abspath(str(base_dir))
+    if os.path.isdir(b) and os.path.basename(b) != VOICE_DIR_NAME and _pack_clip_count(b):
+        return b
+    return None
+
+
+def voice_sets(base_dir: Optional[str] = None) -> List[Dict[str, object]]:
+    """《数字》下**可选的语音包**：[{"name","dir","clips"}]（默认包排最前，其余按名字排）
+
+    · 一个子目录＝一套录音，**目录名就是语音包名**（`鲸宝`、`女声`…）；
+    · 《数字》根目录里直接放音频（老布局，或 `--dir` 直接指到某一套）也算一套，名字是 ""。
+    """
+    explicit = _explicit_voice_dir(base_dir)
+    if explicit:
+        return [{"name": os.path.basename(explicit), "dir": explicit,
+                 "clips": clip_count(explicit)}]
+    root = find_voice_dir(base_dir)
+    if not root:
+        return []
+    out: List[Dict[str, object]] = []
+    try:
+        subs = sorted(n for n in os.listdir(root)
+                      if os.path.isdir(os.path.join(root, n)))
+    except OSError:
+        subs = []
+    for name in subs:
+        d = os.path.join(root, name)
+        n = _pack_clip_count(d)          # ★ v2.9.13：认得出「按数字段分目录」的整句包
+        if n:
+            out.append({"name": name, "dir": d, "clips": n})
+    n = clip_count(root)                    # 根目录自己也可能就是一套
+    if n:
+        out.append({"name": "", "dir": root, "clips": n})
+    out.sort(key=lambda s: (str(s["name"]) != VOICE_SET_DEFAULT, str(s["name"])))
+    return out
+
+
+def voice_set_names(base_dir: Optional[str] = None) -> List[str]:
+    """可选语音包的名字（页面下拉 / `--version` 用；根目录那套的名字是 ""）"""
+    return [str(s["name"]) for s in voice_sets(base_dir)]
+
+
+def resolve_voice_dir(voice_set: Optional[str] = None,
+                      base_dir: Optional[str] = None) -> Optional[str]:
+    """**最终用哪一套录音**：`数字\\<语音包>\\`；返回的就是「去找片段」的那个目录
+
+    没指定 / 名字不认识 / 那套被删了 → 依次回退：调用方明确指的目录 → 默认包
+    → 《数字》根目录 → 第一个可用包。这样设置过时也不会突然没声音。
+    """
+    explicit = _explicit_voice_dir(base_dir)
+    if explicit:                     # `--dir` 都指到具体某一套了，就听它的
+        return explicit
+    root = find_voice_dir(base_dir)
+    if not root:
+        return None
+    name = str(voice_set or "").strip()
+    if name and voice_set_ok(name):
+        sub = os.path.join(root, name)
+        if os.path.isdir(sub) and _pack_clip_count(sub):   # ★ v2.9.13 认分段布局
+            return sub
+    for cand in [VOICE_SET_DEFAULT, ""] + voice_set_names(base_dir):
+        sub = os.path.join(root, cand) if cand else root
+        if os.path.isdir(sub) and (clip_count(sub) if not cand else _pack_clip_count(sub)):
+            return sub
+    return root                      # 目录在、但里面没音频（如实返回，让上层报「缺音频」）
+
+
+def voice_set_of(voice_dir: Optional[str]) -> str:
+    """这个录音目录属于哪个语音包（目录名；《数字》根目录那套返回 ""）"""
+    if not voice_dir:
+        return ""
+    d = os.path.abspath(str(voice_dir))
+    return "" if os.path.basename(d) == VOICE_DIR_NAME else os.path.basename(d)
+
+
+def count_voice_clips(base_dir: Optional[str] = None,
+                      voice_set: Optional[str] = None) -> int:
+    """**选中的那一套**里现有几段可用录音（给 /api/version、--version 报个实在数字）"""
+    return clip_count(resolve_voice_dir(voice_set, base_dir))
+
+
+def find_voice_dir(base_dir: Optional[str] = None) -> Optional[str]:
+    """找《数字》音频目录：先看调用方给的目录，再看本模块/exe 所在目录、当前目录"""
+    cands: List[str] = []
+    if base_dir:
+        b = os.path.abspath(str(base_dir))
+        if os.path.basename(b) == VOICE_DIR_NAME:
+            cands.append(b)
+        cands.append(os.path.join(b, VOICE_DIR_NAME))
+    here = os.path.dirname(os.path.abspath(__file__))
+    cands.append(os.path.join(here, VOICE_DIR_NAME))
+    try:
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        cands.append(os.path.join(exe_dir, VOICE_DIR_NAME))
+    except Exception:      # noqa: BLE001
+        pass
+    cands.append(os.path.join(os.path.abspath(os.getcwd()), VOICE_DIR_NAME))
+    for p in cands:
+        if os.path.isdir(p):
+            return p
+    return None
+
+
+def resolve_voice_files(words: Sequence[str],
+                        voice_dir: Optional[str]) -> Tuple[List[Dict[str, str]], List[str]]:
+    """词串 → 依次要播的录音段：**按最长匹配挑连读录音**，找不到就逐字拆
+
+        123 → ['一百','二十','三']  （一百.mp3 + 二十.mp3 + 3.mp3）
+        110 → ['一百','一十']        （一百.mp3 + 一十.mp3 —— 一十.mp3 是「一十」的整词录音）
+        1000 → ['一','千']           （没有「一千.mp3」就拆成两个字）
+        1000000 → ['百万']           （有「百万.mp3」就用整词）
+    返回 (clips, missing)：clips=[{"word","file","path"}]，missing=[找不到录音的词]
+    """
+    out: List[Dict[str, str]] = []
+    missing: List[str] = []
+    text = "".join(words)
+    i = 0
+    while i < len(text):
+        hit_word = ""
+        hit_path = ""
+        for n in range(min(VOICE_MERGE_MAX, len(text) - i), 0, -1):
+            chunk = text[i:i + n]
+            path = _voice_file(chunk, voice_dir)
+            if path:
+                hit_word, hit_path = chunk, path
+                break
+        if hit_path:
+            out.append({"word": hit_word, "file": os.path.basename(hit_path),
+                        "path": hit_path})
+            i += len(hit_word)
+        else:
+            missing.append(text[i])
+            i += 1
+    return out, missing
+
+
+def readout_paths(total: int, base_dir: Optional[str] = None, prefix: bool = True,
+                  voice_set: Optional[str] = None) -> List[str]:
+    """念「合计 N 番」要依次播放的音频文件（缺音频的词直接跳过）
+
+    ★ v2.9.13：整句语音包优先 —— 有 `345.mp3` 这种「一整句」就直接播它一段，
+    没有再退回逐词拼接（鲸宝那套行为完全不变）。
+    """
+    try:
+        words = fan_readout_words(total, prefix=prefix)
+    except ValueError:
+        return []
+    voice_dir = resolve_voice_dir(voice_set, base_dir)
+    phrase = _voice_phrase_file(total, voice_dir)
+    if phrase:
+        return [phrase]
+    clips, _missing = resolve_voice_files(words, voice_dir)
+    return [c["path"] for c in clips]
+
+
+def readout_info(total: int, base_dir: Optional[str] = None, prefix: bool = True,
+                 voice_set: Optional[str] = None) -> Dict[str, object]:
+    """「合计 N 番」怎么念：中文读法 + 每段音频（给别的程序用，**不用复制音频文件**）
+
+    返回 {"ok","total","text","words","voice_set","dir","clips":[{"word","file","path"}],
+          "missing","error"}
+    `dir` 就是**选中的那一套录音所在目录**（《数字》\\<语音包>\\）—— 调用方只要知道这个目录
+    就能自己放音；`voice_set` 告诉它用的是哪一套（默认包是「女声」）。
+    ★ `words` 是逐词读法，`clips` 是逐段录音（**段数可能比词少**：二十.mp3 一段就读「二十」）。
+    """
+    try:
+        words = fan_readout_words(total, prefix=prefix)
+    except ValueError as exc:
+        return {"ok": False, "total": int(total), "text": "", "words": [],
+                "voice_set": "", "dir": "", "clips": [], "missing": [], "error": str(exc)}
+    voice_dir = resolve_voice_dir(voice_set, base_dir)
+    set_name = voice_set_of(voice_dir)
+    phrase = _voice_phrase_file(total, voice_dir)     # ★ v2.9.13 整句语音包优先
+    if phrase:
+        clips = [{"word": "".join(words), "file": os.path.basename(phrase),
+                  "path": phrase, "phrase": True}]
+        missing = []
+    else:
+        clips, missing = resolve_voice_files(words, voice_dir)
+    if not voice_dir:
+        err = "没找到《%s》音频目录（用 base_dir / --dir 指到程序目录）" % VOICE_DIR_NAME
+    elif missing:
+        err = "缺少音频：%s（语音包 %s，目录：%s）" % ("、".join(missing),
+                                                 voice_set_label(set_name), voice_dir)
+    else:
+        err = ""
+    return {"ok": not err, "total": int(total), "text": "".join(words), "words": words,
+            "voice_set": set_name, "dir": voice_dir or "", "clips": clips,
+            "missing": missing, "error": err}
+
+
+class VoicePlayer:
+    """顺序播放「读番」音频（Windows 用系统自带 MCI，不需要任何第三方库）
+
+    · 非 Windows、没有 winmm、文件缺失 → 静默返回 False，**绝不因为没声音影响算番**。
+    · play() 默认不阻塞（GUI 用）；blocking=True 时播完才返回（命令行用）。
+    · 同一个实例再 play() 会先停掉上一段（stop() 也就一次性用）。
+    """
+
+    def __init__(self, alias: str = "mjvoice"):
+        self._alias = re.sub(r"[^0-9A-Za-z]", "", alias) or "mjvoice"
+        self._lock = threading.Lock()
+        self._gen = 0
+        self._active: Dict[str, str] = {}
+        self._thread: Optional[threading.Thread] = None
+
+    @staticmethod
+    def available() -> bool:
+        """这台机器能不能出声（非 Windows 为 False）"""
+        return _WINMM is not None
+
+    @staticmethod
+    def _mci(cmd: str) -> int:
+        if _WINMM is None:
+            return 1
+        buf = ctypes.create_unicode_buffer(512)
+        try:
+            return int(_WINMM.mciSendStringW(cmd, buf, 512, None))
+        except Exception:      # noqa: BLE001
+            return 1
+
+    def play(self, paths: Sequence[str], blocking: bool = False) -> bool:
+        """依次播放这些音频文件；返回「是否真的开始放了」"""
+        files = [p for p in paths if p and os.path.exists(p)]
+        if not files or _WINMM is None:
+            return False
+        self.stop()
+        with self._lock:
+            self._gen += 1
+            gen = self._gen
+        if blocking:
+            return self._run(files, gen)
+        self._thread = threading.Thread(target=self._run, args=(files, gen),
+                                        name="mahjong-voice", daemon=True)
+        self._thread.start()
+        return True
+
+    def _run(self, paths: Sequence[str], gen: int) -> bool:
+        for i, path in enumerate(paths):
+            with self._lock:
+                if gen != self._gen:          # 被 stop() 或新的 play() 取代
+                    return False
+            alias = "%s%d_%d" % (self._alias, gen, i)
+            dev = "waveaudio" if path.lower().endswith(".wav") else "mpegvideo"
+            if self._mci('open "%s" type %s alias %s' % (path, dev, alias)):
+                return False                   # 打不开（缺解码器等）就整段放弃
+            with self._lock:
+                stale = gen != self._gen       # open 期间被 stop()/新 play() 取代了
+                if not stale:
+                    self._active[alias] = path
+            if stale:                          # 别再多放一段（stop() 是「立刻停」）
+                self._mci("close %s" % alias)
+                return False
+            try:
+                self._mci("play %s wait" % alias)
+            finally:
+                with self._lock:
+                    self._active.pop(alias, None)
+                self._mci("close %s" % alias)
+        return True
+
+    def stop(self) -> None:
+        """立刻停止播放（排到后面的片段不再播，正在播的那段被掐断）"""
+        with self._lock:
+            self._gen += 1
+            active = list(self._active)
+            self._active.clear()               # 立刻反映「停了」（播放线程随后自己收尾）
+        for alias in active:
+            self._mci("stop %s" % alias)
+            self._mci("close %s" % alias)
+
+    @property
+    def playing(self) -> bool:
+        with self._lock:
+            return bool(self._active)
+
+
+_voice_player: Optional[VoicePlayer] = None
+_voice_lock = threading.Lock()
+
+
+def default_player() -> VoicePlayer:
+    """进程内共用的一台「读番播放器」"""
+    global _voice_player
+    with _voice_lock:
+        if _voice_player is None:
+            _voice_player = VoicePlayer()
+        return _voice_player
+
+
+def speak_total(total: int, base_dir: Optional[str] = None, prefix: bool = True,
+                blocking: bool = False, player: Optional[VoicePlayer] = None,
+                voice_set: Optional[str] = None) -> Dict[str, object]:
+    """念「合计 N 番」：返回 readout_info 的结果，另加 `played` 表示是否真的开始放了"""
+    info = readout_info(total, base_dir=base_dir, prefix=prefix, voice_set=voice_set)
+    info["played"] = False
+    if info.get("ok"):
+        pl = player if player is not None else default_player()
+        info["played"] = pl.play([c["path"] for c in info["clips"]],  # type: ignore[index]
+                                 blocking=blocking)
+    return info
+
+
 # ================================================================ 命令行 / 进程内调用
 #
 # ★ v2.6.0：别的程序（Python / C# / Excel / 任何语言）要用国标算番，**不需要 HTTP、不需要端口、
@@ -1693,7 +2221,10 @@ class MahjongFanCalculator:
 
 CLI_FLAGS = ("-H", "--hand", "--score", "-w", "--win", "-m", "--meld",
              "--waits", "--waits-all", "--fan-table", "--version", "--help", "-h",
-             "--text", "--json")
+             "--text", "--json",
+             # ★ v2.9.0 读番：--readout 附读番信息 / --speak 出声 / --say N 只念数字 / --dir 指程序目录
+             # ★ v2.9.3：--voice-set 选用哪一套录音（《数字》下的子目录名）
+             "--readout", "--speak", "--say", "-d", "--dir", "--voice-set", "--set")
 
 _CLI_SUIT_BASE = {"p": 0, "s": 9, "m": 18}      # 筒/索/万 的起始 id
 _CN_TO_CODE: Dict[str, str] = {name_of(i): code_of(i) for i in range(34)}
@@ -1703,6 +2234,8 @@ def cli_wanted(argv: Sequence[str]) -> bool:
     """命令行里是否出现了「算番用」参数（GUI 用它决定要不要开界面）"""
     for a in argv or ():
         if a in CLI_FLAGS or a.startswith("--hand=") or a.startswith("--win="):
+            return True
+        if a.startswith("--voice-set=") or a.startswith("--set="):   # ★ v2.9.3
             return True
     return False
 
@@ -1771,7 +2304,8 @@ def _cli_parse_melds(items: Sequence[str]) -> List[Meld]:
     return melds
 
 
-def score_hand(hand, win=None, melds=None, **opts) -> Dict[str, object]:
+def score_hand(hand, win=None, melds=None, readout=False, speak=False,
+               base_dir=None, voice_set=None, **opts) -> Dict[str, object]:
     """一行算番（给 import 用；返回 JSON 友好的 dict）
 
         hand  : 整手牌（含和张），字符串或列表；"W1 W2 ..." / "123m" / ["W1", ...]
@@ -1779,7 +2313,12 @@ def score_hand(hand, win=None, melds=None, **opts) -> Dict[str, object]:
         melds : 副露；字符串（"chi:123m" 或 "chi:123m peng:111z"）或 Meld 列表
         opts  : tsumo / last_tile / rob_kong / kong_bloom / last_draw / last_discard /
                 round_wind / seat_wind / flowers
-    返回：{"ok": bool, "total": int, "base": int, "fans": [{"name","fan"}], ...}
+        ★ v2.9.0 读番：readout=True 结果里附「合计 N 番」怎么念（音频文件名 + 目录），
+                speak=True 顺手念出来；base_dir=算番器所在目录（找《数字》音频；
+                **别的程序不用复制音频，把目录告诉我们就行**）
+        ★ v2.9.3 voice_set=用哪一套录音（《数字》下的子目录名，如 "鲸宝"/"女声"；
+                默认用 VOICE_SET_DEFAULT）
+    返回：{"ok": bool, "total": int, "base": int, "fans": [{"name","fan"}], ..., "readout": {...}}
     """
     if isinstance(hand, str):
         hand = _cli_norm_tiles(hand)
@@ -1788,10 +2327,12 @@ def score_hand(hand, win=None, melds=None, **opts) -> Dict[str, object]:
         win = _w[0] if _w else None
     if isinstance(melds, str):
         melds = _cli_parse_melds(re.split(r"[\s,;]+", melds.strip())) if melds.strip() else []
-    return score_codes(list(hand or []), win=win, melds=melds, **opts)
+    return score_codes(list(hand or []), win=win, melds=melds, readout=readout,
+                       speak=speak, base_dir=base_dir, voice_set=voice_set, **opts)
 
 
-def score_codes(codes: Sequence[str], win=None, melds=None, **opts) -> Dict[str, object]:
+def score_codes(codes: Sequence[str], win=None, melds=None, readout=False, speak=False,
+                base_dir=None, voice_set=None, **opts) -> Dict[str, object]:
     """与 `score_hand` 相同，但输入已经是牌代码列表"""
     calc = MahjongFanCalculator()
     ids = [tile_of(c) for c in codes]
@@ -1818,7 +2359,14 @@ def score_codes(codes: Sequence[str], win=None, melds=None, **opts) -> Dict[str,
     if win_id is None or win_id not in ids:
         return {"ok": False, "error": "和张不在手牌里（--win 要指一手牌中的某一张）"}
     s = calc.score(mels, ids, win_id, options)
-    return _score_to_dict(s)
+    out = _score_to_dict(s)
+    if readout or speak:
+        # ★ v2.9.0：总番念法（合计 N 番）；speak 时顺手念出来
+        out["readout"] = (speak_total(s.total, base_dir=base_dir, blocking=True,
+                                      voice_set=voice_set) if speak
+                          else readout_info(s.total, base_dir=base_dir,
+                                            voice_set=voice_set))
+    return out
 
 
 def _score_to_dict(s: Score) -> Dict[str, object]:
@@ -1871,6 +2419,9 @@ def cli_main(argv=None) -> int:
                "\n  mahjong_core.py --hand \"1233455677899m\" --json"
                "\n  mahjong_core.py --hand \"1112345678999m\" --win 9m --text"
                "\n  mahjong_core.py --hand \"123567m 99s 111z\" --meld kong:5555z --waits --json"
+               "\n  mahjong_core.py --hand \"1112345678999m\" --win 9m --speak        # 念「合计 N 番」"
+               "\n  mahjong_core.py --say 123 --readout --json                        # 只要读番的音频清单"
+               "\n  mahjong_core.py --say 123 --speak --dir \"D:\\麻将\\Mahjong_Calculator\"  # 指到程序目录即可"
                "\n  牌写法：W1 / 一万 / 123m（万）/ 456s（索）/ 789p（筒）/ 11z（字牌:东南西北中发白）",
     )
     ap.add_argument("tiles", nargs="*", help="牌（位置参数，空格分隔）")
@@ -1890,6 +2441,22 @@ def cli_main(argv=None) -> int:
     ap.add_argument("--round", default="东", help="圈风（东南西北），默认东")
     ap.add_argument("--seat", default="东", help="门风（东南西北），默认东")
     ap.add_argument("--flowers", type=int, default=0, help="花牌张数（每张 1 分，不计起和分）")
+    ap.add_argument("-d", "--dir", default=None, metavar="目录",
+                    help="算番器所在目录（找《%s》读番音频与规则表）；"
+                         "★ 别的程序调用时只要把这个目录指过来，**不用复制我们的文件**"
+                         % VOICE_DIR_NAME)
+    ap.add_argument("--voice-set", "--set", default=None, metavar="语音包", dest="voice_set",
+                    help="用《%s》下哪一套录音读番（目录名）；默认「%s」。可选：%s"
+                         % (VOICE_DIR_NAME, VOICE_SET_DEFAULT,
+                            "、".join(voice_set_label(n)
+                                    for n in voice_set_names()) or "（没找到任何语音包）"))
+    ap.add_argument("--readout", action="store_true",
+                    help="结果里附「读番」信息（中文读法 + 每段音频的文件名/路径）")
+    ap.add_argument("--speak", action="store_true",
+                    help="算完把「合计 N 番」念出来（Windows 用系统自带 MCI；"
+                         "自动附上 --readout 信息）")
+    ap.add_argument("--say", type=int, default=None, metavar="N",
+                    help="不牌算番，只把数字 N 念成「合计 N 番」（测音频；配 --speak 直接出声）")
     ap.add_argument("--text", action="store_true", help="输出人话（默认 JSON）")
     ap.add_argument("--json", action="store_true", help="输出 JSON（默认行为，显式写上更清楚）")
     ap.add_argument("--fan-table", action="store_true", dest="fan_table", help="输出 81 个番种表")
@@ -1905,12 +2472,40 @@ def cli_main(argv=None) -> int:
     try:
         if args.version:
             calc = MahjongFanCalculator()
+            voice_dir = find_voice_dir(args.dir)
+            sets = voice_sets(args.dir)
+            cur = resolve_voice_dir(args.voice_set, args.dir)
             out({"ok": True, "name": "国标麻将算番器", "engine": "mahjong_core",
                  "fans": len(getattr(calc, "fan_values", {})), "tiles": len(TILE_CODES),
-                 "rules": os.path.basename(getattr(calc, "rules_path", "")) or "（内置默认）"},
-                "国标麻将算番器 · 引擎 mahjong_core，番种 %d，牌张 %d"
-                % (len(getattr(calc, "fan_values", {})), len(TILE_CODES)))
+                 "rules": os.path.basename(getattr(calc, "rules_path", "")) or "（内置默认）",
+                 # ★ v2.9.0 读番：音频目录 + 能不能出声（别的程序据此决定要不要自己放音）
+                 # ★ v2.9.3：语音包（可选哪几套 / 当前用的哪一套）
+                 "voice_dir": cur or "",
+                 "voice_clips": count_voice_clips(args.dir, args.voice_set),  # 实有几段录音
+                 "voice_set": voice_set_of(cur),
+                 "voice_set_default": VOICE_SET_DEFAULT,
+                 "voice_sets": [{"name": s["name"], "label": voice_set_label(str(s["name"])),
+                                 "clips": s["clips"]} for s in sets],
+                 "voice_can_play": VoicePlayer.available()},
+                "国标麻将算番器 · 引擎 mahjong_core，番种 %d，牌张 %d；读番语音包 %s（%s）"
+                % (len(getattr(calc, "fan_values", {})), len(TILE_CODES),
+                   voice_set_label(voice_set_of(cur)), cur or
+                   "未找到《%s》目录，可用 --dir 指定" % VOICE_DIR_NAME))
             return 0
+        if args.say is not None:
+            # ★ v2.9.0：只念数字（`--say 123 --speak`），不牌算番 —— 测音频 / 给别的程序复用
+            info = (speak_total(args.say, base_dir=args.dir, blocking=True,
+                                voice_set=args.voice_set) if args.speak
+                    else readout_info(args.say, base_dir=args.dir,
+                                      voice_set=args.voice_set))
+            lines = ["合计 %d 番 → 念法：%s（语音包 %s）"
+                     % (info["total"], info["text"], voice_set_label(str(info["voice_set"])))]
+            for clip in info["clips"]:
+                lines.append("  %s  %s" % (clip["word"], clip["file"] or "（缺音频）"))
+            if info["error"]:
+                lines.append("  " + str(info["error"]))
+            out(info, "\n".join(lines))
+            return 0 if info["ok"] else 2
         if args.fan_table:
             rows = MahjongFanCalculator().fan_table()
             data = [{"value": v, "fans": [{"name": n, "definition": d} for n, d in items]}
@@ -1969,7 +2564,10 @@ def cli_main(argv=None) -> int:
                           rob_kong=args.rob_kong, kong_bloom=args.kong_bloom,
                           last_draw=args.last_draw, last_discard=args.last_discard,
                           round_wind=args.round, seat_wind=args.seat,
-                          flowers=int(args.flowers))
+                          flowers=int(args.flowers),
+                          # ★ v2.9.0 读番（--speak 时顺手念出来；念的是总番）
+                          readout=args.readout or args.speak, speak=args.speak,
+                          base_dir=args.dir, voice_set=args.voice_set)
         if "error" in res:
             out({"ok": False, "error": res["error"]}, "错误：%s" % res["error"])
             return 2
@@ -1984,6 +2582,10 @@ def cli_main(argv=None) -> int:
                                    round_wind=args.round, seat_wind=args.seat,
                                    flowers=int(args.flowers)))
             print(_score_text(s))
+            info = res.get("readout")
+            if isinstance(info, dict):
+                print("读番：%s%s" % (info.get("text", ""),
+                                    "" if info.get("ok") else "（%s）" % info.get("error")))
         else:
             out(res)
         return 0 if res.get("ok") else 1

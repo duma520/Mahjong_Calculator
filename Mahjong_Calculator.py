@@ -51,15 +51,36 @@
       牌写法：W1 / 一万 / 11123456789999m（m 万 s 索 p 筒 z 字牌）；副露：chi:/peng:/kong:/angang:
       默认输出 JSON（--text 为人话）；算不出和牌退出码 1、参数错退出码 2。
 
+★ 读番（v2.9.0）：合计出番以后把「合计 N 番」念出来，音频是**现成的录音片段**，
+  放在程序目录《数字》里（桌面版勾「读番」/点「🔊 读番」、Web 版点「🔊 读番」、
+  接口 --readout/--speak 与 /api/readout）。
+    · 念法＝合计 + 中文读法 + 番（123 → 合计一百二十三番；15 → 合计十五番）。
+    · 放音用 Windows 自带播放器（MCI/winmm），**不需要第三方库**；其它系统静默降级。
+    · ★ v2.9.3 **可选语音包**：《数字》下每个子目录就是一套录音（目录名＝语音包名，
+      如「鲸宝」「女声」），**默认「女声」**。改的地方（就近覆盖）：
+        ① 桌面端「设置 → 通用 → 语音包」（桌面端与 Web 页面的默认值一起改）；
+        ② Web 页面上的「语音：」下拉（只影响这台手机/电脑，刷新还在）；
+        ③ 别的程序：`score_hand(..., voice_set="鲸宝")` /
+           `--voice-set 鲸宝` / `GET /api/readout?total=123&set=鲸宝`。
+    · ★ **别的程序要用，不用复制我们的文件**：把目录告诉它即可 ——
+        score_hand(..., readout=True, base_dir=r"D:\麻将\Mahjong_Calculator")
+        Mahjong_Calculator.exe --say 123 --readout --dir "D:\麻将\Mahjong_Calculator"
+        GET /api/readout?total=123     （返回中文读法 + 每段音频的文件名与下载地址）
+
 Web 版（给手机/平板**浏览器**用；★ 不是给程序调用的接口）
     - 同目录 `mahjong_api.py`：单文件 Web 客户端（手机/平板浏览器可直接算番）。
-    - 工具菜单：启动 Web 版（Ctrl+Alt+A）/ 允许局域网访问（手机·平板）/ 设置访问口令 /
-      免口令访问设置 / Web 版地址与用法 / Web 版端口设置。
+    - ★ v2.9.1：菜单栏**「设置」**（Ctrl+,）点一下弹出**多标签设置窗口**：通用（默认开启自动读番 ·
+      ★ v2.9.3 读番语音包）/
+      Web 版（启动 Web 版 · 启动时自动开启 · 允许局域网访问 · 端口 · 口令 · 免口令 · 页面按钮 · 地址与用法）/
+      高级（信息 · 打开程序目录 · 重置所有设置）。
+      （原来是「工具」下拉菜单，v2.9.1 改成了菜单栏上的「设置」按钮 + 弹窗）
     - 默认只绑 127.0.0.1；勾上「允许局域网访问」改成 0.0.0.0，**默认不需要口令**
       （v2.6.0 起不再自动生成口令），手机打开 http://电脑IP:端口/ 即可。
     - ★ Web 端的**界面布局与桌面版一致**（v2.4.4）：牌选择区（索/筒/万/字牌四行）→ 模式行（+重置）
       → 选项区四行（□选项 / 风圈 / 风位 / 花牌 8 张小图 + 「N 张」）→ 已选牌 → 听牌候选 → 算番结果。
       花牌**不在牌池里**（跟桌面版一样放选项区第四行）；「重置」也是全部复位。
+    - ★ **页面底部固定栏**（v2.9.4）：`↑ 牌池` `↓ 结果` 右边依次是 **`布局：`**、**`按键：`** 两个下拉框
+      和 **`设置`** 按钮（窄屏放不下会自己换第二行，不会横向溢出）。
     - ★ Web 端是**给手机/平板用的**（v2.4.6）：手机没有右键，所以减牌入口是
       「在『已选牌→立牌』里点一张减一张」；长按/右键减牌仍保留给鼠标，
       并禁掉了长按系统菜单与文本选择（`-webkit-touch-callout:none; user-select:none`）。
@@ -67,12 +88,13 @@ Web 版（给手机/平板**浏览器**用；★ 不是给程序调用的接口�
       点某一张＝取消这一张；右键仍然可用，不影响鼠标习惯。
     - ★ **红色数字角标不再可点**（v2.8.0，桌面版与 Web 版同步）：它只是「已选张数」
       的显示；红圈像删除按钮，误触一下就少一张牌，所以这个减牌操作已取消。
-    - ★ **牌尺寸两套布局共存**（v2.7.0）：默认仍是「经典」（固定尺寸，与老版本逐像素一致），
-      点模式行里的「布局：经典」可在 **经典 ⇄ 自适应** 之间切（选择记在 localStorage `mj_layout`）。
-      自适应按屏幕宽高算牌尺寸（一行 9 张不超宽 + 高度上限，夹在 20~46px）——
-      手机上不会过大、平板上不会过小；经典模式会清掉 JS 写的 CSS 变量，回到 CSS 默认值。
+    - ★ Web 端也有**读番**（v2.9.0）：★ v2.9.4 起读番开关在页面底栏「**设置**」里（原来在模式行），
+      点开后每算出总番就由**手机/平板自己念**（页面取 /api/readout 的清单，再逐段播 /audio/xxx；
+      不用电脑出声，也不用复制音频）；用哪一套录音在同一个「设置」弹窗里选（★ v2.9.3）。
+    - ★ **牌尺寸档位**（v2.7.0 起；v2.8.4 改成纯 px 共 27 档）：★ v2.9.4 起下拉框在页面**底栏**
+      （`布局：38px（默认）`＝一张牌多宽、`按键：15px（默认）`＝字号），随时能调、选择记在 localStorage。
     - ★ 免口令白名单（v2.5.0）：口令设了之后，可以**分项**允许某些东西「不输入口令也能用」——
-      工具菜单「免口令访问设置…」里逐项勾选：**Web 客户端页面（含牌面图）** / 自测页 /
+      设置窗口「Web 版 → 免口令访问设置…」里逐项勾选：**Web 客户端页面（含牌面图）** / 自测页 /
       查询类接口 / 算番接口 / 听牌接口。默认（web + debug）与旧版行为一致；
       口令留空时本就不校验口令，勾选怎么写都不影响。
     - 相关设置项：api_port / api_auto_start / api_lan / api_token / **api_anon**。
@@ -108,20 +130,24 @@ Web 版（给手机/平板**浏览器**用；★ 不是给程序调用的接口�
 """
 import json
 import os
+import platform
 import random
 import sys
+import time
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import (QAction, QColor, QDesktopServices, QFont, QIcon,
+                           QPainter, QPen, QPixmap)
 from PySide6.QtWidgets import (
-    QApplication, QButtonGroup, QCheckBox, QDialog, QDialogButtonBox, QFrame,
-    QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QRadioButton,
-    QScrollArea, QStackedWidget, QTextBrowser, QToolButton, QVBoxLayout, QWidget,
+    QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+    QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
+    QRadioButton, QScrollArea, QStackedWidget, QTabWidget, QTableWidget,
+    QTableWidgetItem, QTextBrowser, QToolButton, QVBoxLayout, QWidget,
 )
 
-__version__ = "2.8.4"
+__version__ = "2.9.14"
 APP_NAME = "国标麻将算番器"                 # 中文名（界面显示，保持不变）
 APP_NAME_EN = "Mahjong_Calculator"        # ★ v2.7.3 英文名：文件名 / exe / 打包目录统一用它
 SETTINGS_FILE = "mahjong_settings.json"
@@ -143,6 +169,17 @@ POOL_ROWS = [
 MODE_KEYS = ["stand", "chi", "peng", "minggang", "angang"]
 MODE_TEXTS = {"stand": "立牌", "chi": "吃", "peng": "碰",
               "minggang": "明杠", "angang": "暗杠"}
+
+# ★ v2.9.1：默认是否「自动读番」——桌面版「读番」勾选框、以及 Web 版页面「🔊 读番」
+#   都用它当默认值（默认开）⇒ **无论用哪个端，都自动读番**。
+#   设置里存 `speak_default`（可在「设置 → 通用」里改）；用户自己点过某端的开关就以那端为准。
+SPEAK_DEFAULT = True
+
+# ★ v2.9.3：读番用哪一套录音 —— 《数字》下每个子目录就是一套（目录名＝语音包名），
+#   默认用 `VOICE_SET_DEFAULT`（「女声」，见 mahjong_core）；设置里存 `voice_set`。
+#   桌面端与 Web 端共用：桌面端在「设置 → 通用 → 语音包」里改，
+#   Web 页面在页面上的「语音：」下拉里改（页面上的选择只影响那台手机/电脑）。
+#   （`VOICE_SET` 这个默认值等下面 import 到 mahjong_core 之后再定，见「引擎导入」）
 
 POOL_SIZE = QSize(48, 65)
 HAND_SIZE = QSize(36, 49)
@@ -251,17 +288,28 @@ def save_settings(data: dict) -> bool:
 # ------------------------------------------------------------------ 引擎导入
 
 try:
-    from mahjong_core import (MahjongFanCalculator, Meld, Options, cli_main,
-                              cli_wanted, code_of, counts_of, is_suit, name_of,
-                              suit_of, tile_of)
+    from mahjong_core import (VOICE_DIR_NAME, VOICE_SET_DEFAULT, MahjongFanCalculator, Meld,
+                              Options, VoicePlayer, cli_main, cli_wanted, code_of,
+                              counts_of, count_voice_clips, find_voice_dir, is_suit,
+                              name_of, readout_info, resolve_voice_dir, suit_of, tile_of,
+                              voice_set_label, voice_set_names, voice_set_of, voice_sets)
     CORE_IMPORT_ERROR = None
 except Exception as _exc:       # noqa: BLE001
     MahjongFanCalculator = None      # type: ignore[assignment]
     Meld = None                      # type: ignore[assignment]
     Options = None                   # type: ignore[assignment]
+    VoicePlayer = None               # type: ignore[assignment]
+    readout_info = find_voice_dir = count_voice_clips = None   # type: ignore[assignment]
+    VOICE_DIR_NAME = "数字"
+    VOICE_SET_DEFAULT = "女声"
+    resolve_voice_dir = voice_sets = voice_set_names = None     # type: ignore[assignment]
+    voice_set_label = voice_set_of = None                       # type: ignore[assignment]
     code_of = name_of = tile_of = suit_of = is_suit = counts_of = None
     cli_main = cli_wanted = None     # type: ignore[assignment]
     CORE_IMPORT_ERROR = repr(_exc)
+
+# ★ v2.9.3：读番语音包的默认值（老设置里没有 `voice_set` 就用它；「重置所有设置」也回它）
+VOICE_SET = VOICE_SET_DEFAULT
 
 # ★ Web 版服务（同目录 mahjong_api.py；缺失时程序仍能正常运行，只是没有 Web 版）
 #   注意：**给其它程序调用的「API」是 mahjong_core**（import 或命令行），不是这台 HTTP 服务；
@@ -286,6 +334,86 @@ except Exception as _exc:       # noqa: BLE001
         return "127.0.0.1"
 
     API_IMPORT_ERROR = repr(_exc)
+
+# ★ v2.9.6：算番统计库（SQLite / WAL）。落库失败不影响算番主流程。
+try:
+    from mahjong_stats import (StatsDB as StatsDB_,
+                               fans_text as fans_text_)
+    STATS_IMPORT_ERROR = None
+except Exception as _exc:       # noqa: BLE001
+    StatsDB_ = None                 # type: ignore[assignment]
+    STATS_IMPORT_ERROR = repr(_exc)
+
+    def fans_text_(fans) -> str:    # type: ignore[misc]
+        """兜底：统计模块导入不了时，明细里番种就是空的，其余照常"""
+        return ""
+
+# ★ v2.9.7：统计面板「显示哪些列」的字典与规整函数（与 Web 端共用同一套 key）。
+#   导入失败也要能跑（统计只是附加功能，缺了不能让主程序起不来）。
+try:
+    from mahjong_api import (STATS_COL_ITEMS as STATS_COL_ITEMS_,
+                             STATS_COL_KEYS as STATS_COL_KEYS_,
+                             STATS_COLS_DESKTOP_DEFAULT as STATS_COLS_DESKTOP_DEFAULT_,
+                             stats_cols_normalize as stats_cols_normalize_,
+                             stats_cols_new_merged as stats_cols_new_merged_,
+                             # ★ v2.9.10：逐手明细的「显示哪些列」
+                             DETAIL_COL_ITEMS as DETAIL_COL_ITEMS_,
+                             DETAIL_COL_KEYS as DETAIL_COL_KEYS_,
+                             DETAIL_COLS_DESKTOP_DEFAULT as DETAIL_COLS_DESKTOP_DEFAULT_,
+                             detail_cols_normalize as detail_cols_normalize_,
+                             detail_cols_new_merged as detail_cols_new_merged_)
+except Exception as _exc:       # noqa: BLE001
+    # ★ v2.9.12：与 mahjong_api.STATS_COL_ITEMS 保持同步（多了 nick/os/browser/dev）
+    STATS_COL_ITEMS_ = (("user", "用户"), ("nick", "昵称"), ("ctype", "客户端"),
+                        ("os", "系统"), ("browser", "浏览器"), ("dev", "设备型号"),
+                        ("ip", "IP"), ("ua", "UA（设备）"), ("fan", "合计番数"),
+                        ("cnt", "次数"), ("reach", "达标"), ("last", "最近"),
+                        ("fans", "番种"))
+    STATS_COL_KEYS_ = tuple(k for k, _ in STATS_COL_ITEMS_)
+    STATS_COLS_DESKTOP_DEFAULT_ = STATS_COL_KEYS_
+
+    def _norm_(val, keys, default):     # type: ignore[misc]
+        if isinstance(val, (list, tuple)):
+            res, seen = [], set()
+            for k in val:
+                k = str(k)
+                if k in keys and k not in seen:
+                    seen.add(k)
+                    res.append(k)
+            if res:
+                return tuple(res)
+        return tuple(default)
+
+    def stats_cols_normalize_(val, default=STATS_COLS_DESKTOP_DEFAULT_):  # type: ignore[misc]
+        return _norm_(val, STATS_COL_KEYS_, default)
+
+    def stats_cols_new_merged_(val, default=STATS_COLS_DESKTOP_DEFAULT_):  # type: ignore[misc]
+        cur = list(stats_cols_normalize_(val, default))
+        for k in ("fans", "nick", "os", "browser", "dev"):
+            if k not in cur:
+                cur.append(k)
+        return tuple(cur)
+
+    # ★ v2.9.12：与 mahjong_api.DETAIL_COL_ITEMS 保持同步
+    DETAIL_COL_ITEMS_ = (("day", "日期"), ("time", "时间（毫秒）"), ("nick", "昵称"),
+                         ("ctype", "客户端"), ("os", "系统"), ("browser", "浏览器"),
+                         ("dev", "设备型号"), ("ip", "IP"), ("ua", "UA（设备）"),
+                         ("fan", "番数"), ("base", "起番"), ("reach", "达标"),
+                         ("fans_n", "番种数"), ("fans", "番种"))
+    DETAIL_COL_KEYS_ = tuple(k for k, _ in DETAIL_COL_ITEMS_)
+    DETAIL_COLS_DESKTOP_DEFAULT_ = DETAIL_COL_KEYS_
+
+    def detail_cols_normalize_(val, default=DETAIL_COLS_DESKTOP_DEFAULT_):  # type: ignore[misc]
+        return _norm_(val, DETAIL_COL_KEYS_, default)
+
+    def detail_cols_new_merged_(val, default=DETAIL_COLS_DESKTOP_DEFAULT_):  # type: ignore[misc]
+        cur = list(detail_cols_normalize_(val, default))
+        for k in ("nick", "os", "browser", "dev"):
+            if k not in cur:
+                cur.append(k)
+        return tuple(cur)
+
+    STATS_COLS_API_ERROR = repr(_exc)
 
 DEFAULT_API_PORT = 8718
 
@@ -603,25 +731,65 @@ HELP_TEXT = """
 <code>--rob-kong</code>（抢杠和）、<code>--round 东 --seat 南 --flowers 2</code>。</li>
 <li>默认输出 JSON；<code>--text</code> 输出人话；<code>--version</code> 看引擎信息；
 <code>--fan-table</code> 导出 81 个番种表。算不出和牌时退出码 1、参数错退出码 2。</li>
+<li>★ <b>读番</b>（v2.9.0）：<code>--readout</code> 在结果里附上「合计 N 番」怎么念
+（中文逐字 + 每段音频的文件名与路径），<code>--speak</code> 顺带念出来；
+<code>--say 123</code> 可以不算番、只把数字 N 念出来（<code>--say 123 --speak</code> 直接出声）。</li>
+<li>★ <b>别的程序要用读番，不用复制音频</b>：把我们的目录指过来就行 ——
+<code>Mahjong_Calculator.exe --hand "..." --readout --dir "D:\麻将\Mahjong_Calculator"</code>，
+或进程内 <code>score_hand(..., readout=True, base_dir=r"D:\麻将\Mahjong_Calculator")</code>；
+返回里的 <code>dir</code> 就是《数字》音频目录，<code>clips</code> 是依次要播的文件。</li>
 </ul>
 
 <h3>六、Web 版（手机 / 平板浏览器算番）</h3>
 <ul>
-<li>菜单「工具 → 启动 Web 版」（Ctrl+Alt+A）会在本机开一个网页服务，
+<li>菜单栏「<b>设置</b>」（Ctrl+,）→「Web 版」标签页：勾「启动 Web 版」（Ctrl+Alt+A）
+会在本机开一个网页服务，
 默认 <b>http://127.0.0.1:8718</b>（只监听本机）。<b>这是给浏览器用的</b>，
 不是给其它程序调用的接口（程序请用上面第一条的 <code>mahjong_core</code>）。</li>
-<li><b>手机 / 平板算番</b>：勾上「工具 → 允许局域网访问（手机/平板）」，
+<li><b>手机 / 平板算番</b>：设置 → Web 版 → 勾「允许局域网访问（手机/平板）」，
 手机浏览器打开弹出的地址就能用（页面与桌面版一致：牌池/副露/选项/听牌/算番）。
 <b>默认不需要口令</b>。</li>
-<li><b>牌太大/太小怎么办</b>：模式行里有「<b>布局：经典</b>」按钮，点一下就在
-<b>经典（固定尺寸）</b>与 <b>自适应（随屏幕缩放）</b>之间切换，选择会记住。
-默认是经典，与老版本画面一致；平板上可以切成自适应，牌会放大更好点。</li>
-<li>地址可在「工具 → Web 版地址与用法」里查看（会复制手机链接到剪贴板）。</li>
-<li>想加一道门槛：工具 → 设置访问口令（留空即取消）；还可以在
-「免口令访问设置」里分项决定哪些内容不用口令。</li>
+<li><b>牌太大/太小怎么办</b>：页面<b>底栏</b>里有「<b>布局：</b>」「<b>按键：</b>」两个下拉框
+（布局＝一张牌多宽、按键＝字号），选中立刻生效、选择会记住（默认「38px」「15px」＝老样子）。
+一页放不下时底栏会自己换行，不会挤坏页面。</li>
+<li>地址可在「设置 → Web 版 → 地址与用法…」里查看（会复制手机链接到剪贴板）。</li>
+<li>想加一道门槛：「设置 → Web 版 → 访问口令…」（留空即取消）；还可以在
+「免口令访问设置…」里分项决定哪些内容不用口令。</li>
 <li>只想用命令行起服务（比如开机自启）：
 <code>python mahjong_api.py --host 0.0.0.0 --port 8718</code>（加 <code>--token 口令</code> 才要口令）。</li>
+<li>★ <b>读番</b>（v2.9.0）：★ v2.9.4 起页面上读番开关在<b>底栏「设置」</b>里（原来在模式行）；
+点开以后每算出总番就<b>由手机/平板自己念</b>一遍；同一个「设置」弹窗里还能选<b>语音包</b>
+（用哪一套录音，★ v2.9.3）。其它程序用 <code>GET /api/readout?total=123</code>
+拿「念法 + 每段音频的下载地址」即可，<b>不用复制音频</b>。</li>
 <li>平安提醒：端口只建议在自家网络开；口令只防随手访问，不要当强密码用。</li>
+</ul>
+
+<h3>七、读番（把总番念出来）</h3>
+<ul>
+<li><b>怎么用</b>：选项行的「<b>读番</b>」勾上 = 合计出番以后自动念「合计 N 番」；
+结果区右上角的「<b>🔊 读番</b>」= 随手把当前结果念一遍（不用勾选）。
+「设置 → 通用 → 试听「合计 25 番」」会念一句，用来确认音频在不在。</li>
+<li><b>★ v2.9.1 默认开启自动读番</b>：「设置 → 通用 → □默认开启自动读番」默认就是<b>勾上</b>的 ——
+桌面版的「读番」勾选框、以及 <b>Web 版页面</b>上的「🔊 读番」都默认打开，
+<b>无论用桌面还是手机/平板，都自动读番</b>；某一端自己点过开关，就以那端的选择为准。</li>
+<li><b>音频在哪</b>：就在程序目录的《数字》文件夹里，
+<b>文件名就是它读的那个词</b>：<code>一.mp3</code>…<code>九.mp3</code>、<code>零.mp3</code>、
+<code>十/百/千/万.mp3</code>、<b>连读词</b> <code>一十.mp3</code>…<code>九十.mp3</code>、
+<code>一百.mp3</code>…<code>九百.mp3</code>、<code>百万.mp3</code>，以及 <code>合计.mp3</code>、<code>番.mp3</code>。
+（<b>没有</b>「亿」的录音；重录增删片段<b>不用改程序</b>。）</li>
+<li><b>怎么挑录音</b>：先把番数读成中文（合计 + 读法 + 番），再<b>从前往后挑最长的整词录音</b>——
+能对上整词就用整词（<code>一百.mp3</code> + <code>二十.mp3</code> + <code>三.mp3</code>），
+对不上就逐字拆（<code>一千</code> → <code>一.mp3</code> + <code>千.mp3</code>；
+<code>十万</code> → <code>十.mp3</code> + <code>万.mp3</code>）。</li>
+<li><b>念法</b>：合计 + 中文读法 + 番 —— 123 → 「合计 一百二十三 番」；
+15 → 「合计 十五 番」（十~十九省掉前面的「一」）；110 → 「一百一十」（用 <code>一十.mp3</code>）；
+10010 → 「一万零一十」；1000000 → 「一百万」。</li>
+<li><b>缺片段怎么办</b>：<b>桌面版整句不念</b>（宁可不出声，也不要把番数念错）；
+接口会如实给出 <code>missing</code> 列表（例如读到「亿」时缺 <code>亿.mp3</code>）。算番照旧。</li>
+<li><b>放音方式</b>：Windows 用系统自带的播放器（MCI），<b>不需要装任何东西</b>；
+其它系统不出声（但 <code>--readout</code> / <code>/api/readout</code> 照样能看到音频清单）。</li>
+<li><b>同一个番数不会连着重念</b>（点来点去、改风圈风位时不会一直吵）；「重置」不动这个开关，
+只把正在念的停下来。</li>
 </ul>
 """
 
@@ -711,7 +879,7 @@ class WebDisplayDialog(QDialog):
         self.setMinimumWidth(460)
         lay = QVBoxLayout(self)
         tip = QLabel(
-            "手机/平板打开 Web 版页面时，模式行里那几个按钮默认只留「重置」和「布局」。\n"
+            "手机/平板打开 Web 版页面时，模式行里默认只留「重置」（布局/按键/设置都在页面底栏）。\n"
             "下面两项是给调试/运维用的，勾上才会显示在页面上（默认都不显示）。")
         tip.setWordWrap(True)
         lay.addWidget(tip)
@@ -746,6 +914,396 @@ class WebDisplayDialog(QDialog):
 
 # ------------------------------------------------------------------ 主窗口
 
+class SettingsDialog(QDialog):
+    """设置窗口（★ v2.9.1）—— 多标签，把原来「工具」菜单里的设置全收进来
+
+    设计取舍：
+      · 只负责**显示与转发**：真正的动作仍是主窗口那几个 QAction
+        （`win.act_api` / `act_api_lan` / `act_api_token` / `act_api_anon` /
+        `act_api_show` / `act_api_info` / `act_api_port` / `act_speak` / `act_speak_default`），
+        所以行为与老菜单逐字一致，测试也照旧能直接触发那些 action。
+      · **改动即时生效并自动落盘**（沿用全程序「设置实时自动保存」的约定），
+        因此没有「确定 / 取消」，只有「关闭」。
+      · 复选框与 action **双向同步**：在这里勾选＝触发 action；action 被别处改动
+        （比如启动失败自动回弹、或 Web 版被停止）复选框也跟着变。
+    """
+
+    def __init__(self, win, parent=None):
+        super().__init__(parent if parent is not None else win)
+        self.win = win
+        self.setWindowTitle("设置 · " + APP_NAME)
+        self.setWindowIcon(app_icon())
+        self.setMinimumSize(600, 470)
+        outer = QVBoxLayout(self)
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs, 1)
+        # ★ v2.9.11：原来「通用」一页塞了读番 + 算番选项 + 统计列 + 明细列，
+        #   窗口被撑得很长 —— 拆成「读番 / 统计列」两页，一页只讲一件事
+        self.tabs.addTab(self._tab_general(), "读番")
+        self.tabs.addTab(self._tab_statcols(), "统计列")
+        self.tabs.addTab(self._tab_web(), "Web 版")
+        self.tabs.addTab(self._tab_advanced(), "高级")
+        foot = QHBoxLayout()
+        self.lbl_foot = QLabel("设置会实时保存，改动立刻生效。")
+        self.lbl_foot.setStyleSheet("color:#6b7684;")
+        foot.addWidget(self.lbl_foot)
+        foot.addStretch(1)
+        btn_close = QPushButton("关闭")
+        btn_close.setDefault(True)
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.clicked.connect(self.accept)
+        foot.addWidget(btn_close)
+        outer.addLayout(foot)
+
+    # ---- 小工具
+    def _title(self, text: str) -> QLabel:
+        lbl = QLabel(text)
+        f = QFont()
+        f.setBold(True)
+        lbl.setFont(f)
+        lbl.setStyleSheet("color:#2f7ff4;")
+        return lbl
+
+    def _note(self, html: str) -> QLabel:
+        lbl = QLabel(html)
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet("color:#6b7684;")
+        return lbl
+
+    def _bind_check(self, box: QCheckBox, act) -> None:
+        """复选框 ↔ action 双向同步（点复选框 = 触发那个 action）"""
+        box.setChecked(act.isChecked())
+        box.clicked.connect(lambda _checked=False, a=act: a.trigger())
+        act.toggled.connect(box.setChecked)
+
+    def _bind_button(self, text: str, act, tip: str = "") -> QPushButton:
+        btn = QPushButton(text)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setToolTip(tip or act.toolTip())
+        btn.clicked.connect(lambda _checked=False, a=act: a.trigger())
+        return btn
+
+    # ---- 语音包（★ v2.9.3：读番用哪一套录音）
+    def _voice_options(self) -> List[Tuple[str, str]]:
+        """可选语音包：[(名字, 显示文字)]（找不到音频就退回默认那套，别让下拉空着）"""
+        try:
+            packs = voice_sets(app_dir()) if voice_sets else []
+        except Exception:       # noqa: BLE001
+            packs = []
+        out = [(str(s["name"]), "%s（%d 段）" % (voice_set_label(str(s["name"])), s["clips"]))
+               for s in packs]
+        cur = str(self.win.voice_set or VOICE_SET)
+        if not out:
+            return [(cur, "%s（没找到音频）" % voice_set_label(cur))]
+        if cur not in [n for n, _ in out]:       # 设置里那套被删了 → 也列出来，看得见
+            out.insert(0, (cur, "%s（已不存在）" % voice_set_label(cur)))
+        return out
+
+    def _fill_voice_options(self) -> None:
+        self.cmb_voice.blockSignals(True)
+        self.cmb_voice.clear()
+        for name, text in self._voice_options():
+            self.cmb_voice.addItem(text, name)
+        idx = self.cmb_voice.findData(str(self.win.voice_set or VOICE_SET))
+        self.cmb_voice.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_voice.blockSignals(False)
+        self.refresh_voice_state()
+
+    def _on_voice_changed(self, *args) -> None:      # noqa: ARG002
+        self.win._set_voice_set(str(self.cmb_voice.currentData() or ""))  # noqa: SLF001
+        self.refresh_voice_state()
+
+    def refresh_voice_state(self) -> None:
+        """语音包那行的说明：当前用哪一套、在哪个目录、有几段"""
+        if not hasattr(self, "lbl_voice"):
+            return
+        w = self.win
+        try:
+            vdir = (resolve_voice_dir(w.voice_set, app_dir()) if resolve_voice_dir else "") or ""
+            n = (count_voice_clips(app_dir(), w.voice_set) if count_voice_clips else 0) or 0
+        except Exception:       # noqa: BLE001
+            vdir, n = "", 0
+        self.lbl_voice.setText(
+            "当前语音包：<b>%s</b>（%d 段）<br>%s"
+            % (voice_set_label(w.voice_set), n,
+               vdir or "没找到《%s》目录" % VOICE_DIR_NAME))
+
+    # ---- 通用
+    def _tab_general(self) -> QWidget:
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setSpacing(8)
+        lay.addWidget(self._title("读番（合计出番以后念出来）"))
+        self.cb_speak_default = QCheckBox("默认开启自动读番")
+        self.cb_speak_default.setToolTip(
+            "勾上（默认）：算完一手牌自动念「合计 N 番」——\n"
+            "  · 桌面版：主界面的「读番」勾选框默认打开；\n"
+            "  · Web 版：手机/平板页面上的「🔊 读番」默认也是打开的（刷新页面即生效）。\n"
+            "所以**无论用桌面还是手机，都默认自动读番**。\n"
+            "某一端自己点过开关，就以那端的选择为准；同一个番数不会连着重念。")
+        self._bind_check(self.cb_speak_default, self.win.act_speak_default)
+        lay.addWidget(self.cb_speak_default)
+        # ★ v2.9.3：读番用哪一套录音（《数字》下的子目录名）—— 桌面端立刻生效，
+        #   Web 页面刷新后跟着变；页面自己选过就以页面上的为准
+        rowv = QHBoxLayout()
+        rowv.addWidget(QLabel("读番语音包："))
+        self.cmb_voice = QComboBox()
+        self.cmb_voice.setToolTip(
+            "读番用哪一套录音：《%s》下**每个子目录就是一套**（目录名＝语音包名，\n"
+            "如「鲸宝」「女声」），默认用「%s」。\n"
+            "· 桌面版：立刻改用这一套；\n"
+            "· Web 版：页面上「语音：」下拉的默认值改成这一套（刷新页面即生效），\n"
+            "  手机上自己选过就只影响那台手机。" % (VOICE_DIR_NAME, VOICE_SET_DEFAULT))
+        rowv.addWidget(self.cmb_voice)
+        rowv.addStretch(1)
+        lay.addLayout(rowv)
+        self.lbl_voice = self._note("")
+        lay.addWidget(self.lbl_voice)
+        self._fill_voice_options()
+        self.cmb_voice.currentIndexChanged.connect(self._on_voice_changed)
+        lay.addWidget(self._note(
+            "音频用的是程序目录《%s》里现成的录音片段（<b>文件名就是它读的那个词</b>："
+            "<code>一.mp3</code>、<code>二十.mp3</code>、<code>一百.mp3</code>…）。<br>"
+            "念法：合计 + 中文读法 + 番 —— 123 → 「合计 一百二十三 番」；"
+            "<b>缺片段就整句不念</b>（宁可不出声也不念错），算番照旧。"
+            % VOICE_DIR_NAME))
+        row = QHBoxLayout()
+        self.btn_speak_try = self._bind_button("试听「合计 25 番」", self.win.act_speak)
+        row.addWidget(self.btn_speak_try)
+        row.addStretch(1)
+        lay.addLayout(row)
+        lay.addWidget(self._note(
+            "其它程序要用读番<b>不用复制音频</b>：把本程序目录告诉它即可 ——<br>"
+            "<code>score_hand(..., readout=True, base_dir=r\"…\\Mahjong_Calculator\")</code>；<br>"
+            "<code>Mahjong_Calculator.exe --say 123 --readout --dir \"…\\Mahjong_Calculator\"</code>；<br>"
+            "<code>GET /api/readout?total=123</code>（返回中文读法 + 每段音频的下载地址）。"))
+        lay.addWidget(self._title("算番选项"))
+        lay.addWidget(self._note(
+            "自摸 / 和绝张 / 抢杠和·杠上开花 / 海底捞月·妙手回春、圈风、风位、花牌 —— "
+            "这些是<b>每一手牌</b>的选项，仍在主界面的「算番」页上直接点（不在这里）。"))
+        lay.addStretch(1)
+        return page
+
+    # ---- 统计列（★ v2.9.11：从「通用」拆出来单独一页 —— 两个列组 + 说明太长，撑爆窗口）
+    def _tab_statcols(self) -> QWidget:
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setSpacing(8)
+        lay.addWidget(self._title("统计显示列"))     # ★ v2.9.7
+        lay.addWidget(self._note(
+            "「工具 → 统计」窗口里显示哪几列：勾几个就显示几个（<b>至少留一个</b>）。<br>"
+            "手机 / 平板上「统计」面板的<b>默认列</b>也跟着这里走；"
+            "那台设备在自己「设置」里改过，就以设备上的选择为准。"))
+        grid_sc = QGridLayout()
+        grid_sc.setSpacing(4)
+        self.stat_col_boxes: Dict[str, QCheckBox] = {}
+        for _i, (_key, _label) in enumerate(STATS_COL_ITEMS_):
+            _box = QCheckBox(_label)
+            _box.setChecked(_key in self.win.stats_cols)
+            _box.setToolTip("勾选 →「统计」窗口显示「%s」这一列" % _label)
+            self.stat_col_boxes[_key] = _box
+            grid_sc.addWidget(_box, _i // 4, _i % 4)
+        for _box in self.stat_col_boxes.values():    # 全部建好后再连信号，避免初始化误触发
+            _box.toggled.connect(lambda _c=False: self._on_stat_col_changed())
+        lay.addLayout(grid_sc)
+        _rowsc = QHBoxLayout()
+        _btn_sc_all = QPushButton("全选")
+        _btn_sc_all.setCursor(Qt.PointingHandCursor)
+        _btn_sc_all.clicked.connect(lambda _c=False: self._set_stat_cols_all(True))
+        _btn_sc_none = QPushButton("只留「用户」")
+        _btn_sc_none.setCursor(Qt.PointingHandCursor)
+        _btn_sc_none.clicked.connect(lambda _c=False: self._set_stat_cols_all(False))
+        _rowsc.addWidget(_btn_sc_all)
+        _rowsc.addWidget(_btn_sc_none)
+        _rowsc.addStretch(1)
+        lay.addLayout(_rowsc)
+
+        # ---- ★ v2.9.10：逐手明细显示列（与上面「统计显示列」同一套做法）
+        lay.addWidget(self._title("明细显示列"))
+        lay.addWidget(self._note(
+            "「统计」里选中某个人点「明细…」后，那个<b>逐手明细</b>窗口显示哪几列："
+            "勾几个就显示几个（<b>至少留一个</b>）。<br>"
+            "手机 / 平板上明细面板的<b>默认列</b>也跟着这里走；"
+            "那台设备在自己「设置」里改过，就以设备上的选择为准。"))
+        grid_dc = QGridLayout()
+        grid_dc.setSpacing(4)
+        self.detail_col_boxes: Dict[str, QCheckBox] = {}
+        for _i, (_key, _label) in enumerate(DETAIL_COL_ITEMS_):
+            _box = QCheckBox(_label)
+            _box.setChecked(_key in self.win.detail_cols)
+            _box.setToolTip("勾选 → 明细窗口显示「%s」这一列" % _label)
+            self.detail_col_boxes[_key] = _box
+            grid_dc.addWidget(_box, _i // 4, _i % 4)
+        for _box in self.detail_col_boxes.values():   # 建好后再连信号，避免初始化误触发
+            _box.toggled.connect(lambda _c=False: self._on_detail_col_changed())
+        lay.addLayout(grid_dc)
+        _rowdc = QHBoxLayout()
+        _btn_dc_all = QPushButton("全选")
+        _btn_dc_all.setCursor(Qt.PointingHandCursor)
+        _btn_dc_all.clicked.connect(lambda _c=False: self._set_detail_cols_all(True))
+        _btn_dc_min = QPushButton("只留「时间」")
+        _btn_dc_min.setCursor(Qt.PointingHandCursor)
+        _btn_dc_min.clicked.connect(lambda _c=False: self._set_detail_cols_all(False))
+        _rowdc.addWidget(_btn_dc_all)
+        _rowdc.addWidget(_btn_dc_min)
+        _rowdc.addStretch(1)
+        lay.addLayout(_rowdc)
+        lay.addStretch(1)
+        return page
+
+    # ---- 统计显示列（★ v2.9.7）
+    def _set_stat_cols_all(self, all_on: bool) -> None:
+        """「全选」 / 「只留『用户』」两个快捷按钮"""
+        for _key, _box in self.stat_col_boxes.items():
+            want = True if all_on else (_key == "user")
+            if _box.isChecked() != want:
+                _box.setChecked(want)
+        self._on_stat_col_changed()
+
+    # ---- 明细显示列（★ v2.9.10）
+    def _set_detail_cols_all(self, all_on: bool) -> None:
+        """「全选」 / 「只留『时间』」两个快捷按钮"""
+        for _key, _box in self.detail_col_boxes.items():
+            want = True if all_on else (_key == "time")
+            if _box.isChecked() != want:
+                _box.setChecked(want)
+        self._on_detail_col_changed()
+
+    def _on_detail_col_changed(self, *args) -> None:      # noqa: ARG002
+        cols = [k for k, b in self.detail_col_boxes.items() if b.isChecked()]
+        if not cols:
+            # ★ 一列都不勾 → 明细表全白，强制把「时间」勾回来
+            box = self.detail_col_boxes.get("time")
+            if box is not None:
+                box.blockSignals(True)
+                box.setChecked(True)
+                box.blockSignals(False)
+                cols = ["time"]
+        self.win._set_detail_cols(cols)                  # noqa: SLF001
+
+    def _on_stat_col_changed(self, *args) -> None:      # noqa: ARG002
+        cols = [k for k, b in self.stat_col_boxes.items() if b.isChecked()]
+        if not cols:
+            # ★ 一列都不勾 → 表格是空的没法看，强制把「用户」勾回来
+            box = self.stat_col_boxes.get("user")
+            if box is not None:
+                box.blockSignals(True)
+                box.setChecked(True)
+                box.blockSignals(False)
+                cols = ["user"]
+        self.win._set_stats_cols(cols)                   # noqa: SLF001
+
+    # ---- Web 版
+    def _tab_web(self) -> QWidget:
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setSpacing(8)
+        lay.addWidget(self._title("Web 版（手机 / 平板浏览器算番）"))
+        self.cb_api = QCheckBox("启动 Web 版")
+        self._bind_check(self.cb_api, self.win.act_api)
+        lay.addWidget(self.cb_api)
+        self.cb_api_auto = QCheckBox("启动程序时自动开启 Web 版")
+        self.cb_api_auto.setToolTip(
+            "勾上：下次打开本程序就自动开服务，手机/平板不用等你在电脑上点一下。\n"
+            "（手动开启 / 停止 Web 版时这个开关会跟着变 —— 它记的就是「下次要不要自动开」）")
+        self._bind_check(self.cb_api_auto, self.win.act_api_auto)
+        lay.addWidget(self.cb_api_auto)
+        self.cb_api_lan = QCheckBox("允许局域网访问（手机 / 平板）")
+        self._bind_check(self.cb_api_lan, self.win.act_api_lan)
+        lay.addWidget(self.cb_api_lan)
+        self.lbl_web_state = self._note("")
+        lay.addWidget(self.lbl_web_state)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+        for i, (text, act) in enumerate((
+                ("端口设置…", self.win.act_api_port),
+                ("访问口令…", self.win.act_api_token),
+                ("免口令访问设置…", self.win.act_api_anon),
+                ("页面按钮显示设置…", self.win.act_api_show),
+                ("地址与用法…", self.win.act_api_info))):
+            grid.addWidget(self._bind_button(text, act), i // 2, i % 2)
+        lay.addLayout(grid)
+        lay.addWidget(self._note(
+            "★ 这里开的是**给浏览器看的网页版**；其它程序要算番请直接用 <code>mahjong_core</code>"
+            "（import 或命令行调用本程序，<b>不需要 HTTP / 端口 / 先启动谁</b>）。"))
+        lay.addStretch(1)
+        self.win.act_api.toggled.connect(lambda _c=False: self.refresh_web_state())
+        self.win.act_api_lan.toggled.connect(lambda _c=False: self.refresh_web_state())
+        self.refresh_web_state()
+        return page
+
+    def refresh_web_state(self) -> None:
+        """把当前 Web 版状态说成人话（勾选/停止后立刻更新）"""
+        w = self.win
+        if not w._api_running():
+            text = "当前：<b>未启动</b>"
+        else:
+            text = ("当前：<b>%s</b> —— 本机 %s；手机/平板 %s"
+                    % ("局域网已开" if w.api_lan else "仅本机",
+                       "http://127.0.0.1:%d/" % w.api_port, w._api_watch_url()))
+        text += "<br>访问口令：%s；免口令：%s<br>页面按钮：%s" % (
+            w.api_token or "（未设置 → 不需要口令）", w._anon_text(), w._web_show_text())
+        self.lbl_web_state.setText(text)
+
+    # ---- 高级
+    def _tab_advanced(self) -> QWidget:
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setSpacing(8)
+        lay.addWidget(self._title("信息"))
+        w = self.win
+        fans = len(getattr(w.calc, "fan_values", {})) if w.calc else 0
+        try:
+            vcur = (resolve_voice_dir(w.voice_set, app_dir()) if resolve_voice_dir else "") or ""
+            vall = voice_sets(app_dir()) if voice_sets else []
+            nclips = (count_voice_clips(app_dir(), w.voice_set) if count_voice_clips else 0) or 0
+        except Exception:           # noqa: BLE001
+            vcur, vall, nclips = "", [], 0
+        packs = "、".join("%s（%d 段）" % (voice_set_label(str(s["name"])), s["clips"])
+                          for s in vall) or "（没找到任何语音包）"
+        info = QLabel(
+            "%s v%s（英文名 %s）<br>"
+            "算番引擎：mahjong_core，番种 %d 个<br>"
+            "设置文件：%s<br>"
+            "读番语音包：<b>%s</b>（%d 段）<br>"
+            "读番音频：%s<br>"
+            "可选语音包：%s"
+            % (APP_NAME, __version__, APP_NAME_EN, fans, settings_path(),
+               voice_set_label(w.voice_set), nclips,
+               vcur or "（未找到《%s》目录）" % VOICE_DIR_NAME, packs))
+        info.setWordWrap(True)
+        info.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        lay.addWidget(info)
+        lay.addWidget(self._title("维护"))
+        row = QHBoxLayout()
+        btn_dir = QPushButton("打开程序目录")
+        btn_dir.setCursor(Qt.PointingHandCursor)
+        btn_dir.setToolTip("打开本程序所在目录（设置文件、《数字》音频、《麻将图》牌面图都在这里）")
+        btn_dir.clicked.connect(lambda: self._open_dir())
+        row.addWidget(btn_dir)
+        btn_reset = QPushButton("重置所有设置…")
+        btn_reset.setCursor(Qt.PointingHandCursor)
+        btn_reset.setToolTip("把全部设置恢复成默认值（手牌/副露等算番状态不受影响）")
+        btn_reset.clicked.connect(lambda: self.win._reset_settings())
+        row.addWidget(btn_reset)
+        row.addStretch(1)
+        lay.addLayout(row)
+        lay.addWidget(self._note(
+            "「重置所有设置」会把：默认开启自动读番（回默认<b>开</b>）、读番语音包（回默认<b>%s</b>）、"
+            "Web 版相关设置、窗口几何、读番勾选、圈风风位、花牌 等全部恢复默认；"
+            "已经选好的牌/副露不受影响（那属于「重置」按钮的事）。" % VOICE_SET_DEFAULT))
+        lay.addStretch(1)
+        return page
+
+    @staticmethod
+    def _open_dir() -> None:
+        try:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(app_dir()))
+        except Exception:           # noqa: BLE001
+            pass
+
+
 class MahjongFanWindow(QMainWindow):
     """国标麻将算番器主窗口"""
 
@@ -767,7 +1325,25 @@ class MahjongFanWindow(QMainWindow):
         self.candidates: List[Tuple[int, object]] = []
         self._loading = True
         self._global_settings: dict = load_settings()
-        self.api_server = None                # ★ 本地 HTTP API 服务（工具菜单里开/关）
+        # ★ v2.9.0 读番：念「合计 N 番」用的播放器 + 记录（同一个番数不重复念）
+        self.voice = VoicePlayer() if VoicePlayer else None
+        self._total: Optional[int] = None          # 最近算出的总番（None = 还没算出来）
+        self._last_spoken: Optional[int] = None    # 上次念过的番数
+        # ★ v2.9.1：默认开启自动读番（桌面端读番勾选框 + Web 页面默认值都看它）
+        self.speak_default = bool(self._global_settings.get("speak_default", SPEAK_DEFAULT))
+        # ★ v2.9.3：读番用哪一套录音（《数字》下的子目录名；桌面端与 Web 端默认值都看它）
+        self.voice_set = str(self._global_settings.get("voice_set") or VOICE_SET)
+        # ★ v2.9.7：统计面板显示哪几列（桌面端统计窗口用；同时作为 Web 端的默认值）
+        # ★ v2.9.9：老设置里没有的**新列**（番种）自动补到末尾，否则升级后永远看不到
+        self.stats_cols: List[str] = list(stats_cols_new_merged_(
+            self._global_settings.get("stats_cols"), STATS_COLS_DESKTOP_DEFAULT_))
+        # ★ v2.9.10：逐手明细显示哪几列（桌面端明细窗口用；同时作为 Web 端的默认值）
+        self.detail_cols: List[str] = list(detail_cols_new_merged_(
+            self._global_settings.get("detail_cols"), DETAIL_COLS_DESKTOP_DEFAULT_))
+        self._settings_dlg = None                  # 设置窗口（打开时才有）
+        self._stats_dlg = None                     # ★ v2.9.7 统计窗口（打开时才有；改列时要跟着刷新）
+        self._detail_dlg = None                    # ★ v2.9.10 逐手明细窗口（打开时才有；改列时跟着刷新）
+        self.api_server = None                # ★ 本地 HTTP API 服务（设置窗口「Web 版」里开/关）
         self.api_port = int(self._global_settings.get("api_port") or DEFAULT_API_PORT)
         self.api_auto_start = bool(self._global_settings.get("api_auto_start", False))
         self.api_lan = bool(self._global_settings.get("api_lan", False))
@@ -782,6 +1358,15 @@ class MahjongFanWindow(QMainWindow):
         self.web_show: List[str] = ([k for k in WEB_SHOW_KEYS_ if k in _show]
                                    if isinstance(_show, (list, tuple))
                                    else list(WEB_SHOW_DEFAULT_))
+        # ★ v2.9.6：算番统计库（SQLite / WAL）；**桌面端与 Web 端共用同一 db 文件**
+        #   落库失败只记日志、不影响算番主流程。
+        self.stats = None
+        if StatsDB_ is not None:
+            try:
+                self.stats = StatsDB_(os.path.join(app_dir(), "mahjong_stats.db"))
+            except Exception as _exc:      # noqa: BLE001
+                self.stats = None
+                sys.stderr.write("[stats] 统计库初始化失败：%r\n" % (_exc,))
 
         self._build_ui()
         self._build_menu()
@@ -871,9 +1456,21 @@ class MahjongFanWindow(QMainWindow):
         pool.setColumnStretch(max(len(row) for row in POOL_ROWS), 1)
         box.addLayout(pool)
 
-        # 2) 操作按钮行（立牌 / 吃 / 碰 / 明杠 / 暗杠  重置）
+        # 2) 操作按钮行（★ v2.9.5：重置 / 立牌 / 吃 / 碰 / 明杠 / 暗杠 —— 「重置」在「立牌」左边，
+        #    与 Web 页面同一顺序；原来是放在最后）
         mode_row = QHBoxLayout()
         mode_row.setSpacing(6)
+        self.btn_reset = QPushButton("\u91cd\u7f6e")
+        self.btn_reset.setFocusPolicy(Qt.NoFocus)
+        self.btn_reset.setMinimumHeight(32)
+        self.btn_reset.setMinimumWidth(62)
+        self.btn_reset.setCursor(Qt.PointingHandCursor)
+        self.btn_reset.setStyleSheet(
+            "QPushButton{border:1px solid #e8a552;border-radius:4px;"
+            "background:#fdf0dd;color:#b9670d;font-weight:bold;} "
+            "QPushButton:hover{background:#fbe3c4;}")
+        self.btn_reset.clicked.connect(self.on_reset)
+        mode_row.addWidget(self.btn_reset)
         mode_row.addWidget(self._hint_label("模式"))
         self.mode_group = QButtonGroup(self)
         self.mode_group.setExclusive(True)
@@ -896,18 +1493,6 @@ class MahjongFanWindow(QMainWindow):
             setattr(self, "btn_mode_" + key, btn)
         self.btn_mode_stand.setChecked(True)
         self.mode_group.idClicked.connect(self.on_mode_changed)
-
-        self.btn_reset = QPushButton("\u91cd\u7f6e")
-        self.btn_reset.setFocusPolicy(Qt.NoFocus)
-        self.btn_reset.setMinimumHeight(32)
-        self.btn_reset.setMinimumWidth(62)
-        self.btn_reset.setCursor(Qt.PointingHandCursor)
-        self.btn_reset.setStyleSheet(
-            "QPushButton{border:1px solid #e8a552;border-radius:4px;"
-            "background:#fdf0dd;color:#b9670d;font-weight:bold;} "
-            "QPushButton:hover{background:#fbe3c4;}")
-        self.btn_reset.clicked.connect(self.on_reset)
-        mode_row.addWidget(self.btn_reset)
         mode_row.addStretch(1)
         box.addLayout(mode_row)
 
@@ -917,15 +1502,23 @@ class MahjongFanWindow(QMainWindow):
         self.cb_last_tile = QCheckBox("和绝张")
         self.cb_special_a = QCheckBox("抢杠和")
         self.cb_special_b = QCheckBox("海底捞月")
+        # ★ v2.9.0 读番：勾上以后，每算出新的总番就念一遍「合计 N 番」
+        self.cb_speak = QCheckBox("读番")
         self.cb_tsumo.setToolTip("自己抓进牌成和")
         self.cb_last_tile.setToolTip("和的这张牌，牌池中只剩最后一张")
         self.cb_special_a.setToolTip("勾选自摸时变为「杠上开花」")
         self.cb_special_b.setToolTip("勾选自摸时变为「妙手回春」")
+        self.cb_speak.setToolTip(
+            "算完番把总番念出来（合计 N 番）。\n"
+            "音频取程序目录《%s》文件夹里现成的录音片段（★ 用哪一套在「设置 → 通用 → 读番语音包」里选）；\n"
+            "同一个番数不会连着重念，想听当前结果可点结果区的「🔊 读番」"
+            % VOICE_DIR_NAME)
         self.cb_tsumo.toggled.connect(self.on_tsumo_toggled)
+        self.cb_speak.toggled.connect(self.on_speak_toggled)
         opt_row = QHBoxLayout()
         opt_row.setSpacing(14)
         for cb in (self.cb_tsumo, self.cb_last_tile,
-                   self.cb_special_a, self.cb_special_b):
+                   self.cb_special_a, self.cb_special_b, self.cb_speak):
             opt_row.addWidget(cb)
         opt_row.addStretch(1)
         box.addLayout(opt_row)
@@ -1071,13 +1664,31 @@ class MahjongFanWindow(QMainWindow):
             "border-radius:6px;}")
         rb = QVBoxLayout(res_frame)
         rb.setContentsMargins(10, 8, 10, 8)
+        # ★ v2.9.0 读番：总番旁边放一个「🔊 读番」，随时把当前结果念一遍
+        head_row = QHBoxLayout()
+        head_row.setContentsMargins(0, 0, 0, 0)
+        head_row.setSpacing(8)
         self.lbl_total = QLabel("共 0 番")
         f = QFont()
         f.setPointSize(15)
         f.setBold(True)
         self.lbl_total.setFont(f)
         self.lbl_total.setStyleSheet("color:#2f7ff0;border:none;")
-        rb.addWidget(self.lbl_total)
+        head_row.addWidget(self.lbl_total)
+        self.btn_speak = QPushButton("\U0001F50A 读番")
+        self.btn_speak.setFocusPolicy(Qt.NoFocus)
+        self.btn_speak.setCursor(Qt.PointingHandCursor)
+        self.btn_speak.setToolTip("把当前总番念出来（合计 N 番）；音频在程序目录《%s》里"
+                                  % VOICE_DIR_NAME)
+        self.btn_speak.setStyleSheet(
+            "QPushButton{border:1px solid #ccd4e0;border-radius:4px;background:#ffffff;"
+            "color:#333;padding:3px 10px;} "
+            "QPushButton:hover{background:#eef4ff;} "
+            "QPushButton:disabled{color:#b6bcc6;border-color:#e6eaf0;background:#f7f8fa;}")
+        self.btn_speak.clicked.connect(self.on_speak_clicked)
+        head_row.addWidget(self.btn_speak)
+        head_row.addStretch(1)
+        rb.addLayout(head_row)
         self.list_fans = QListWidget()
         self.list_fans.setFrameShape(QFrame.NoFrame)
         self.list_fans.setMinimumHeight(150)
@@ -1208,52 +1819,34 @@ class MahjongFanWindow(QMainWindow):
         return page
 
     def _build_menu(self) -> None:
+        """菜单栏：文件 / **设置** / 帮助（★ v2.9.1）
+
+        ★ v2.9.1：原来的「工具」菜单**改成菜单栏上的「设置」**——点一下直接弹出
+          **多标签设置窗口**（`SettingsDialog`：通用 / Web 版 / 高级），
+          原来工具菜单里的项都搬进窗口了（`_build_settings_actions()` 造的那些 QAction）。
+        """
         bar = self.menuBar()
+        self._build_settings_actions()
         m_file = bar.addMenu("文件(&F)")
         act_quit = QAction("退出(&Q)", self)
         act_quit.setShortcut("Ctrl+Q")
         act_quit.triggered.connect(self.close)
         m_file.addAction(act_quit)
-        # ★ 工具：Web 版（手机/平板浏览器算番）——**不是给程序调用的接口**，
-        #   程序间调用请直接用 mahjong_core（见帮助页）
-        m_tool = bar.addMenu("工具(&T)")
-        self.act_api = QAction("启动 Web 版(&W)", self)
-        self.act_api.setCheckable(True)
-        self.act_api.setShortcut("Ctrl+Alt+A")
-        self.act_api.setToolTip("给手机/平板浏览器用的 Web 版（默认 http://127.0.0.1:8718）\n"
-                                "别的程序要算番请直接用 mahjong_core：import 或命令行调用，\n"
-                                "不需要 HTTP、不需要端口、不需要先启动谁")
-        self.act_api.triggered.connect(self._api_toggle)
-        m_tool.addAction(self.act_api)
-        self.act_api_lan = QAction("允许局域网访问（手机/平板）", self)
-        self.act_api_lan.setCheckable(True)
-        self.act_api_lan.setToolTip("勾上后服务绑到 0.0.0.0：同一 WiFi 下的手机/平板\n"
-                                    "用浏览器打开 http://电脑IP:端口 即可算番（默认不要口令）")
-        self.act_api_lan.triggered.connect(self._api_lan_toggle)
-        m_tool.addAction(self.act_api_lan)
-        # ★ 保存为属性：测试与内部逻辑都直接引用，不要靠遍历 menuBar().actions() 去找
-        #   （遍历时拿到已失效的 QMenu 包装会报 "already deleted"，v2.5.0 踩过）
-        act_api_token = QAction("设置访问口令(&K)…", self)
-        act_api_token.triggered.connect(self._api_set_token)
-        self.act_api_token = act_api_token
-        m_tool.addAction(act_api_token)
-        act_api_anon = QAction("免口令访问设置(&N)…", self)
-        act_api_anon.setToolTip("设了口令后，哪些东西可以不输入口令直接用（含 Web 客户端）")
-        act_api_anon.triggered.connect(self._api_set_anon)
-        self.act_api_anon = act_api_anon
-        m_tool.addAction(act_api_anon)
-        act_api_show = QAction("Web 版显示设置(&S)…", self)
-        act_api_show.setToolTip("手机/平板页面上的「接口自测页」「换口令」按钮要不要显示"
-                                "（默认都不显示）")
-        act_api_show.triggered.connect(self._api_set_show)
-        self.act_api_show = act_api_show
-        m_tool.addAction(act_api_show)
-        act_api_info = QAction("Web 版地址与用法(&I)…", self)
-        act_api_info.triggered.connect(self._api_show_info)
-        m_tool.addAction(act_api_info)
-        act_api_port = QAction("Web 版端口设置(&P)…", self)
-        act_api_port.triggered.connect(self._api_set_port)
-        m_tool.addAction(act_api_port)
+
+        # ★ 菜单栏上的「设置」：**不是下拉菜单**，是「点一下就弹窗」的动作
+        #   （QMenuBar.addAction 一个没有子菜单的 action ＝ 菜单栏上的一个可点项）
+        self.act_settings = QAction("设置(&S)", self)
+        self.act_settings.setShortcut("Ctrl+,")          # 通用快捷键：偏好设置
+        self.act_settings.setToolTip("打开设置窗口（通用 / Web 版 / 高级）；快捷键 Ctrl+,")
+        self.act_settings.triggered.connect(lambda: self.open_settings())
+        bar.addAction(self.act_settings)
+
+        # ★ v2.9.6：统计（桌面端查看全部人的算番统计；手机/平板 Web 端在页面底栏「统计」看）
+        self.act_stats = QAction("统计(&T)", self)
+        self.act_stats.setToolTip("查看所有用户（含手机/平板 Web 端、桌面端本地）的算番统计")
+        self.act_stats.triggered.connect(lambda: self.open_stats())
+        bar.addAction(self.act_stats)
+
         m_help = bar.addMenu("帮助(&H)")
         act_help = QAction("用法说明(&H)", self)
         act_help.triggered.connect(lambda: self._goto_page(2))
@@ -1265,6 +1858,225 @@ class MahjongFanWindow(QMainWindow):
         m_help.addAction(act_fan)
         m_help.addSeparator()
         m_help.addAction(act_about)
+
+    # ---- 设置窗口（★ v2.9.1）
+    def _build_settings_actions(self) -> None:
+        """设置项的 QAction（原来「工具」菜单里的那些，v2.9.1 起由设置窗口承载）
+
+        ★ 约定（踩过坑，别改）：这些 action **一律存成窗口属性**再引用，
+          不要靠遍历 `menuBar()` 去找（拿到已失效的 QMenu 包装会报
+          `RuntimeError: Internal C++ object already deleted`，v2.5.0 踩过）。
+        ★ 也**不进任何菜单**了 —— 设置窗口里的复选框/按钮直接转发到这些 action；
+          带快捷键的（Ctrl+Alt+A）额外 `self.addAction()` 挂到窗口上，快捷键照旧可用。
+        """
+        # Web 版（手机/平板浏览器算番）——**不是给程序调用的接口**，
+        # 程序间调用请直接用 mahjong_core（见帮助页）
+        self.act_api = QAction("启动 Web 版(&W)", self)
+        self.act_api.setCheckable(True)
+        self.act_api.setShortcut("Ctrl+Alt+A")
+        self.act_api.setToolTip("给手机/平板浏览器用的 Web 版（默认 http://127.0.0.1:8718）\n"
+                                "别的程序要算番请直接用 mahjong_core：import 或命令行调用，\n"
+                                "不需要 HTTP、不需要端口、不需要先启动谁")
+        self.act_api.triggered.connect(self._api_toggle)
+        # ★ v2.9.1：记住「下次启动要不要自动开」——原来只是个藏在设置文件里的键，
+        #   现在在设置窗口里露出来了（手动开/停时它也会跟着变，见 _api_start/_api_stop）
+        self.act_api_auto = QAction("启动程序时自动开启 Web 版", self)
+        self.act_api_auto.setCheckable(True)
+        self.act_api_auto.setChecked(bool(self.api_auto_start))
+        self.act_api_auto.setToolTip("勾上：下次打开本程序就自动开 Web 版服务，\n"
+                                     "手机/平板不用等你在电脑上点一下")
+        self.act_api_auto.triggered.connect(self._set_auto_start)
+        self.act_api_lan = QAction("允许局域网访问（手机/平板）", self)
+        self.act_api_lan.setCheckable(True)
+        self.act_api_lan.setChecked(bool(self.api_lan))
+        self.act_api_lan.setToolTip("勾上后服务绑到 0.0.0.0：同一 WiFi 下的手机/平板\n"
+                                    "用浏览器打开 http://电脑IP:端口 即可算番（默认不要口令）")
+        self.act_api_lan.triggered.connect(self._api_lan_toggle)
+        self.act_api_token = QAction("设置访问口令(&K)…", self)
+        self.act_api_token.triggered.connect(self._api_set_token)
+        self.act_api_anon = QAction("免口令访问设置(&N)…", self)
+        self.act_api_anon.setToolTip("设了口令后，哪些东西可以不输入口令直接用（含 Web 客户端）")
+        self.act_api_anon.triggered.connect(self._api_set_anon)
+        self.act_api_show = QAction("Web 版显示设置(&S)…", self)
+        self.act_api_show.setToolTip("手机/平板页面上的「接口自测页」「换口令」按钮要不要显示"
+                                     "（默认都不显示）")
+        self.act_api_show.triggered.connect(self._api_set_show)
+        self.act_api_info = QAction("Web 版地址与用法(&I)…", self)
+        self.act_api_info.triggered.connect(self._api_show_info)
+        self.act_api_port = QAction("Web 版端口设置(&P)…", self)
+        self.act_api_port.triggered.connect(self._api_set_port)
+        # ★ v2.9.0 读番：试听一句「合计 25 番」（顺便验一下《数字》音频在不在）
+        self.act_speak = QAction("试听读番(&V)", self)
+        self.act_speak.setToolTip("念一句「合计 25 番」听听效果；音频取程序目录《%s》"
+                                  % VOICE_DIR_NAME)
+        self.act_speak.triggered.connect(lambda: self._read_out(25))
+        # ★ v2.9.1：默认开启自动读番（桌面版读番勾选框 + Web 页面默认值都看它）
+        self.act_speak_default = QAction("默认开启自动读番", self)
+        self.act_speak_default.setCheckable(True)
+        self.act_speak_default.setChecked(bool(self.speak_default))
+        self.act_speak_default.setToolTip(
+            "勾上（默认）：算完一手牌自动念「合计 N 番」——\n"
+            "  · 桌面版：主界面的「读番」勾选框默认打开；\n"
+            "  · Web 版：手机/平板页面上的「🔊 读番」默认也是打开的。\n"
+            "某一端自己点过开关，就以那端的选择为准。")
+        self.act_speak_default.triggered.connect(self._set_speak_default)
+        # ★ 这批 action 不再进任何菜单，快捷键就得自己挂到窗口上
+        #   （Ctrl+Alt+A＝启动/停止 Web 版；设置窗口里的按钮转发到同一个 action）
+        self.addAction(self.act_api)
+
+    def open_settings(self, tab: int = 0) -> "SettingsDialog":
+        """打开设置窗口（多标签：通用 / Web 版 / 高级）——菜单栏「设置」或 Ctrl+, 调它"""
+        dlg = SettingsDialog(self, self)
+        dlg.tabs.setCurrentIndex(max(0, min(int(tab), dlg.tabs.count() - 1)))
+        self._settings_dlg = dlg
+        try:
+            dlg.exec()
+        finally:
+            self._settings_dlg = None
+        return dlg
+
+    def open_stats(self) -> Optional["StatsDialog"]:
+        """打开统计窗口（★ v2.9.6）：查看全部用户的算番统计（按天聚合）"""
+        dlg = StatsDialog(self, self.stats)
+        self._stats_dlg = dlg
+        try:
+            dlg.exec()
+        finally:
+            self._stats_dlg = None
+        return dlg
+
+    def _set_stats_cols(self, cols) -> None:
+        """★ v2.9.7：「统计」窗口显示哪几列
+
+        来源：设置 → 通用 →「统计显示列」的复选框。
+        改动立刻生效：① 已打开的统计窗口重建表头；② 自动落盘（下次启动沿用）；
+        ③ 已开启的 Web 服务同步换新默认值（手机刷新页面后按新列显示，
+           除非那台手机在自己「设置」里改过 —— 那就以手机为准）。
+        """
+        self.stats_cols = list(stats_cols_normalize_(cols, STATS_COLS_DESKTOP_DEFAULT_))
+        dlg = getattr(self, "_stats_dlg", None)
+        if dlg is not None:
+            try:
+                dlg.rebuild_columns(self.stats_cols)
+            except Exception as _exc:      # noqa: BLE001
+                sys.stderr.write("[stats] 刷新统计列失败：%r\n" % (_exc,))
+        srv = getattr(self, "api_server", None)
+        if srv is not None:
+            try:                           # 服务已开着：直接改它的默认值，不用重启
+                srv.stats_cols = tuple(self.stats_cols)
+            except Exception:              # noqa: BLE001
+                pass
+        self._autosave_settings()
+
+    def _set_detail_cols(self, cols) -> None:
+        """★ v2.9.10：「逐手明细」窗口显示哪几列
+
+        与 `_set_stats_cols` 完全对称：改动立刻生效、同步给已开启的 Web 服务、自动落盘。
+        设置窗口与统计/明细窗口都是模态的，正常情况下改列时明细窗口是关着的；
+        这里仍做一次刷新调用（防御性 —— 万一以后改成非模态就直接生效）。
+        """
+        self.detail_cols = list(detail_cols_normalize_(cols,
+                                                       DETAIL_COLS_DESKTOP_DEFAULT_))
+        dlg = getattr(self, "_detail_dlg", None)
+        if dlg is not None:
+            try:
+                dlg.rebuild_columns(self.detail_cols)
+            except Exception as _exc:      # noqa: BLE001
+                sys.stderr.write("[stats] 刷新明细列失败：%r\n" % (_exc,))
+        srv = getattr(self, "api_server", None)
+        if srv is not None:
+            try:
+                srv.detail_cols = tuple(self.detail_cols)
+            except Exception:              # noqa: BLE001
+                pass
+        self._autosave_settings()
+
+    def _set_speak_default(self, checked: bool) -> None:
+        """「默认开启自动读番」——桌面端勾选框与 Web 页面默认值一起跟着变"""
+        self.speak_default = bool(checked)
+        # 桌面端：立刻把主界面的「读番」也设成一样（setChecked 会连带触发念一次/存盘）
+        if self.cb_speak.isChecked() != self.speak_default:
+            self.cb_speak.setChecked(self.speak_default)
+        # Web 版：页面是按请求现生成的，重启服务后手机/平板刷新即生效
+        was_running = self._api_running()
+        if was_running:
+            self._api_stop(silent=True, remember=False)
+        self._autosave_settings()
+        if was_running:
+            self._api_start(silent=True)
+        self.statusBar().showMessage(
+            "默认自动读番：%s（Web 版页面刷新后生效）"
+            % ("开启" if self.speak_default else "关闭"), 5000)
+
+    def _set_auto_start(self, checked: bool) -> None:
+        """「启动程序时自动开启 Web 版」——只改偏好，不立刻起服务（下次启动才生效）"""
+        self.api_auto_start = bool(checked)
+        self._autosave_settings()
+        self.statusBar().showMessage(
+            "下次启动%s自动开启 Web 版" % ("" if self.api_auto_start else "不"), 5000)
+
+    def _set_voice_set(self, name: str) -> None:
+        """换读番语音包（★ v2.9.3）
+
+        桌面端立刻改用这一套（下次读番就是新声音）；Web 版页面的默认值也跟着变 ——
+        页面是按请求现生成的，重启一下服务，手机/平板刷新页面即生效
+        （页面上自己选过的手机只影响那台手机，不受这里影响）。
+        """
+        name = str(name or "")
+        if name == self.voice_set:
+            return
+        self.voice_set = name
+        was_running = self._api_running()
+        if was_running:
+            self._api_stop(silent=True, remember=False)
+        self._autosave_settings()
+        if was_running:
+            self._api_start(silent=True)
+        try:
+            vdir = (resolve_voice_dir(self.voice_set, app_dir())
+                    if resolve_voice_dir else "") or ""
+            n = (count_voice_clips(app_dir(), self.voice_set)
+                 if count_voice_clips else 0) or 0
+        except Exception:       # noqa: BLE001
+            vdir, n = "", 0
+        if self._settings_dlg is not None:
+            self._settings_dlg.refresh_voice_state()
+        self.statusBar().showMessage(
+            "读番语音包：%s（%d 段）%s；Web 版页面刷新后生效"
+            % (voice_set_label(self.voice_set), n, "——" + vdir if vdir else ""), 6000)
+
+    def _reset_settings(self) -> None:
+        """重置所有设置（高级页）——设置回默认；**算番状态（已选牌/副露）不动**"""
+        if QMessageBox.question(
+                self, "重置所有设置",
+                "把全部设置恢复成默认值？\n\n"
+                "· 默认开启自动读番 → 回到「开」\n"
+                "· 读番语音包 → 回到「%s」\n" % VOICE_SET_DEFAULT +
+                "· Web 版（自动开启 / 局域网 / 端口 / 口令 / 免口令 / 页面按钮）→ 回默认\n"
+                "· 窗口大小与位置、读番勾选、圈风风位、花牌 → 回默认\n\n"
+                "已经选好的牌 / 副露**不受影响**（那是「重置」按钮的事）。"
+        ) != QMessageBox.Yes:
+            return
+        was_running = self._api_running()
+        if was_running:
+            self._api_stop(silent=True, remember=False)
+        self._global_settings = {}
+        self.speak_default = SPEAK_DEFAULT
+        self.voice_set = VOICE_SET                                        # ★ v2.9.3 语音包
+        self.api_port = DEFAULT_API_PORT
+        self.api_lan = False
+        self.api_token = ""
+        self.api_anon = list(ANON_DEFAULT)
+        self.web_show = list(WEB_SHOW_DEFAULT_)
+        self.api_auto_start = False
+        # 恢复默认几何（用 _apply_settings 走同一套逻辑，但别让它读回旧文件）
+        self._apply_settings({"geo_ver": 0})
+        self.resize(WIN_W, WIN_H)
+        self._autosave_settings()
+        if self.api_auto_start:
+            self._api_start(silent=True)
+        self._refresh_all()
+        self.statusBar().showMessage("已重置所有设置（算番状态未动）", 5000)
 
     def _goto_page(self, idx: int) -> None:
         self.stack.setCurrentIndex(idx)
@@ -1320,7 +2132,17 @@ class MahjongFanWindow(QMainWindow):
                                     "缺少 mahjong_api.py 或导入失败：\n%s" % API_IMPORT_ERROR)
             return False
         srv = ApiServer_(self._api_host(), self.api_port, self.api_token,
-                         anon=tuple(self.api_anon), show=tuple(self.web_show))
+                         anon=tuple(self.api_anon), show=tuple(self.web_show),
+                         # ★ v2.9.1：把「默认开启自动读番」告诉服务端 → 页面据此默认打开读番
+                         speak_default=bool(self.speak_default),
+                         # ★ v2.9.3：把「读番语音包」告诉服务端 → 页面「语音：」下拉的默认项
+                         voice_set=str(self.voice_set or ""),
+                         # ★ v2.9.6：把统计库交给 Web 服务，使 Web 端算番与桌面端查看共用同一份数据
+                         stats=self.stats,
+                         # ★ v2.9.7：Web 端「统计」面板默认显示哪几列 = 桌面端设置里的选择
+                         stats_cols=list(self.stats_cols),
+                         # ★ v2.9.10：Web 端「逐手明细」面板默认显示哪几列
+                         detail_cols=list(self.detail_cols))
         try:
             url = srv.start()
         except Exception as exc:       # noqa: BLE001
@@ -1328,7 +2150,7 @@ class MahjongFanWindow(QMainWindow):
             self.statusBar().showMessage("Web 版启动失败：%s" % msg, 6000)
             if not silent:
                 QMessageBox.warning(self, "Web 版启动失败",
-                                    "%s\n\n可在「工具 → Web 版端口设置」里换一个端口。" % msg)
+                                    "%s\n\n可在「设置 → Web 版 → 端口设置…」里换一个端口。" % msg)
             return False
         self.api_server = srv
         self.api_port = srv.port_actual
@@ -1336,6 +2158,8 @@ class MahjongFanWindow(QMainWindow):
         if getattr(self, "act_api", None) is not None:
             self.act_api.setChecked(True)
             self.act_api.setText("停止 Web 版(&W)")
+        if getattr(self, "act_api_auto", None) is not None:
+            self.act_api_auto.setChecked(True)      # 记住「下次启动也自动开」
         if getattr(self, "act_api_lan", None) is not None:
             self.act_api_lan.setChecked(self.api_lan)
         if self.api_lan:
@@ -1358,6 +2182,8 @@ class MahjongFanWindow(QMainWindow):
         if getattr(self, "act_api", None) is not None:
             self.act_api.setChecked(False)
             self.act_api.setText("启动 Web 版(&W)")
+        if remember and getattr(self, "act_api_auto", None) is not None:
+            self.act_api_auto.setChecked(False)     # 「下次启动不自动开」跟着变
         if srv is not None and not silent:
             self.statusBar().showMessage("Web 版已停止", 4000)
         if remember:
@@ -1377,7 +2203,7 @@ class MahjongFanWindow(QMainWindow):
         if not self._api_running():
             QMessageBox.information(
                 self, "Web 版（手机/平板）",
-                "服务未启动。用「工具 → 启动 Web 版」（Ctrl+Alt+A）即可开启。\n\n"
+                "服务未启动。用「设置 → Web 版 → 启动 Web 版」（Ctrl+Alt+A）即可开启。\n\n"
                 "默认只监听本机 127.0.0.1:%d；要让手机/平板用，请勾上"
                 "「允许局域网访问」。\n\n"
                 "★ 这是给**浏览器**看的网页版。其它程序要算番请直接用 mahjong_core：\n"
@@ -1424,7 +2250,7 @@ class MahjongFanWindow(QMainWindow):
             QMessageBox.information(
                 self, "已允许局域网访问",
                 "手机/平板用浏览器打开下面这个地址即可算番（同一 WiFi，**不需要口令**）：\n\n%s\n\n"
-                "想加一道门槛再自己设：工具 → 设置访问口令（可随手取消）。"
+                "想加一道门槛再自己设：设置 → Web 版 → 访问口令（可随手取消）。"
                 % self._api_watch_url())
         else:
             self.statusBar().showMessage("已关闭局域网访问（回到仅本机）", 5000)
@@ -1529,6 +2355,11 @@ class MahjongFanWindow(QMainWindow):
             "last_tile": bool(self.cb_last_tile.isChecked()),
             "special_a": bool(self.cb_special_a.isChecked()),
             "special_b": bool(self.cb_special_b.isChecked()),
+            "speak": bool(self.cb_speak.isChecked()),      # ★ v2.9.0 读番（当前开关）
+            "speak_default": bool(self.speak_default),     # ★ v2.9.1 默认开启自动读番
+            "voice_set": str(self.voice_set),              # ★ v2.9.3 读番语音包
+            "stats_cols": list(self.stats_cols),           # ★ v2.9.7 统计面板显示哪几列
+            "detail_cols": list(self.detail_cols),         # ★ v2.9.10 逐手明细显示哪几列
             "mode": self.mode,
             "page": self.stack.currentIndex(),
             "api_port": int(self.api_port),
@@ -1541,7 +2372,7 @@ class MahjongFanWindow(QMainWindow):
 
     def _apply_settings(self, s: dict) -> None:
         for w in (self.cb_tsumo, self.cb_last_tile,
-                  self.cb_special_a, self.cb_special_b):
+                  self.cb_special_a, self.cb_special_b, self.cb_speak):
             w.blockSignals(True)
         if s.get("wind_round") in WIND_NAMES:
             self.cb_round[WIND_NAMES.index(s["wind_round"])].setChecked(True)
@@ -1561,8 +2392,29 @@ class MahjongFanWindow(QMainWindow):
         self._update_special_labels()
         self.cb_special_a.setChecked(bool(s.get("special_a", False)))
         self.cb_special_b.setChecked(bool(s.get("special_b", False)))
+        # ★ v2.9.1：先取「默认开启自动读番」，再由它决定「读番」勾选框
+        #   · 没这个键（老设置 / 新装）→ 用常量 SPEAK_DEFAULT（开）⇒「无论哪个端都自动读番」
+        #   · 有这个键 → 说明设置已经过 v2.9.1，此时 `speak` 才是**用户自己的选择**，听它的
+        #   （重要：v2.9.1 之前存下来的 `speak:false` 只是「当时的默认值」，不是用户的选择，
+        #     所以要按新默认「开」处理，否则升级上来的人会看到「勾选框明明勾着、主界面却没勾」）
+        self.speak_default = bool(s.get("speak_default", SPEAK_DEFAULT))
+        speak_on = (bool(s.get("speak", self.speak_default)) if "speak_default" in s
+                    else self.speak_default)
+        self.cb_speak.setChecked(speak_on)                                   # v2.9.0 读番
+        if getattr(self, "act_speak_default", None) is not None:
+            self.act_speak_default.setChecked(self.speak_default)
+        # ★ v2.9.3：读番语音包 —— 老设置（没有这个键）就用默认那套「女声」
+        #   （名字对应的目录被删了也不用管：resolve_voice_dir() 会自动回退，不会没声音）
+        self.voice_set = str(s.get("voice_set") or VOICE_SET)
+        # ★ v2.9.7：统计面板显示哪几列（老设置没有这个键 → 桌面端默认全列）
+        # ★ v2.9.9：老设置补齐新增列（番种）
+        self.stats_cols = list(stats_cols_new_merged_(s.get("stats_cols"),
+                                                      STATS_COLS_DESKTOP_DEFAULT_))
+        # ★ v2.9.10：逐手明细显示哪几列（老设置没有这个键 → 明细 10 列全开）
+        self.detail_cols = list(detail_cols_new_merged_(s.get("detail_cols"),
+                                                        DETAIL_COLS_DESKTOP_DEFAULT_))
         for w in (self.cb_tsumo, self.cb_last_tile,
-                  self.cb_special_a, self.cb_special_b):
+                  self.cb_special_a, self.cb_special_b, self.cb_speak):
             w.blockSignals(False)
         geo = s.get("geometry")
         try:
@@ -1609,10 +2461,12 @@ class MahjongFanWindow(QMainWindow):
             self.web_show = list(WEB_SHOW_DEFAULT_)
         if getattr(self, "act_api_lan", None) is not None:
             self.act_api_lan.setChecked(self.api_lan)
+        if getattr(self, "act_api_auto", None) is not None:
+            self.act_api_auto.setChecked(self.api_auto_start)
 
     def _connect_autosave(self) -> None:
         for w in (self.cb_tsumo, self.cb_last_tile,
-                  self.cb_special_a, self.cb_special_b):
+                  self.cb_special_a, self.cb_special_b, self.cb_speak):
             w.toggled.connect(self._autosave_settings)
         for rb in self.cb_round + self.cb_seat:
             rb.toggled.connect(self._autosave_settings)
@@ -1640,6 +2494,8 @@ class MahjongFanWindow(QMainWindow):
             self.timer_autosave.stop()
         except Exception:       # noqa: BLE001
             pass
+        if self.voice is not None:      # ★ v2.9.0：退出时别还在念
+            self.voice.stop()
         # ★ 先关本地 API（记住「下次启动自动开」的状态），再存设置
         self._api_stop(silent=True, remember=False)
         self._save_settings_now()
@@ -1706,6 +2562,43 @@ class MahjongFanWindow(QMainWindow):
         self._refresh_all()
         self._autosave_settings()
 
+    # ---- 读番（★ v2.9.0）
+    def _read_out(self, total: int) -> bool:
+        """念「合计 N 番」：音频取程序目录《数字》（别的机器上只要目录对就行）
+
+        返回「是否真的开始念了」；音频缺失 / 非 Windows → False（不影响算番）。
+        ★ v2.9.2：音频缺一段就**整句不念**（宁可不出声，也不要把番数念错 ——
+          `readout_paths()` 是「缺哪段跳哪段」，直接拿来播会少念一个字）。
+        """
+        if self.voice is None or readout_info is None:
+            return False
+        try:
+            info = readout_info(int(total), base_dir=app_dir(), voice_set=self.voice_set)
+        except Exception:       # noqa: BLE001
+            return False
+        if not info.get("ok"):
+            return False
+        paths = [c["path"] for c in info.get("clips", [])]     # type: ignore[union-attr]
+        if not paths:
+            return False
+        self._last_spoken = int(total)
+        return bool(self.voice.play(paths))
+
+    def on_speak_clicked(self) -> None:
+        """点结果区「🔊 读番」：把当前总番念一遍"""
+        if self._total is None:
+            self.statusBar().showMessage("还没有算出番数", 2000)
+            return
+        if not self._read_out(self._total):
+            self.statusBar().showMessage(
+                "念不出来：程序目录下没有《%s》音频（读番用系统自带播放器，"
+                "Windows 才出声）" % VOICE_DIR_NAME, 4000)
+
+    def on_speak_toggled(self, checked: bool) -> None:
+        """勾上「读番」时，若已经有结果就先念一次（马上能听到效果）"""
+        if checked and self._total is not None:
+            self._read_out(self._total)
+
     def on_tsumo_toggled(self, checked: bool) -> None:    # noqa: ARG002
         self._update_special_labels(reset=True)
         self._refresh_all()
@@ -1741,6 +2634,11 @@ class MahjongFanWindow(QMainWindow):
         """★ 全部重置（v2.4.4）：手牌 / 副露 / 和张 / 待选 / 模式 / 花牌 /
         自摸·和绝张·抢杠和·海底捞月 / 圈风 / 风位 —— 一律回到初始状态，并立即存进设置
         """
+        # ★ v2.9.0 读番：正在念的停下、忘记念过的番数（**不动「读番」勾选** ——
+        #   它是个偏好设置，不是这一手牌的状态；下次算出番照样会念）
+        self._last_spoken = None
+        if self.voice is not None:
+            self.voice.stop()
         self.concealed.clear()
         self.melds = []
         self.win_tile = None
@@ -2039,6 +2937,8 @@ class MahjongFanWindow(QMainWindow):
 
     def _update_result(self) -> None:
         self.list_fans.clear()
+        self._total = None                      # ★ v2.9.0：还没得出总番
+        self.btn_speak.setEnabled(False)
         if self.calc is None:
             self.lbl_total.setText("算番引擎不可用")
             return
@@ -2067,6 +2967,8 @@ class MahjongFanWindow(QMainWindow):
                 return
         opts = self._options()
         s = self.calc.score(self.melds, masked + [win], win, opts)
+        # ★ v2.9.6：桌面端本地算番也计入统计（client_type='desktop'）
+        self._record_desktop_stats(s, masked, win)
         if auto:
             self.win_tile = win
             wcode = code_of(win)
@@ -2087,6 +2989,62 @@ class MahjongFanWindow(QMainWindow):
             self._add_fan_item("牌型：%s" % s.pattern)
         if s.message:
             self._add_fan_item(s.message, "#c0392b")
+        # ★ v2.9.0 读番：合计出番以后念出来（勾了「读番」才念；同一个番数不重复念）
+        self._total = s.total
+        self.btn_speak.setEnabled(True)
+        if s.fans and self.cb_speak.isChecked() and self._last_spoken != s.total:
+            self._read_out(s.total)
+
+    def _desktop_nick(self) -> str:
+        """★ v2.9.12：把本机计算机名登记成「desktop」这个用户的昵称（只登记一次）
+
+        统计表的「昵称」列读的是 user_nick 表，所以必须在**这里**登记，
+        光把名字写进 score_log 只能让逐手明细显示，统计表里还是「-」。
+        计算机名不会变，`_nick_done` 记住已登记过，避免每手牌都写一次库。
+        """
+        if getattr(self, "_nick_done", None):
+            return self._nick_done
+        name = desktop_nick()
+        if name and self.stats is not None:
+            try:
+                name = self.stats.set_nick("desktop", "", name)
+            except Exception as _exc:   # noqa: BLE001
+                sys.stderr.write("[stats] 登记本机昵称失败：%r\n" % (_exc,))
+        self._nick_done = name
+        return name
+
+    def _record_desktop_stats(self, s, masked, win) -> None:
+        """★ v2.9.6：把桌面端本次算番结果落库（client_type='desktop'）。
+
+        - 同一手牌（牌 + 副露 + 和张）只记一次，避免选项切换反复刷数；
+        - 落库失败只记日志，绝不抛异常影响算番/界面。
+        """
+        if self.stats is None or s is None:
+            return
+        try:
+            sig = "desktop|%s|%s|%s" % (
+                tuple(sorted((t, n) for t, n in self.concealed.items())),
+                tuple(tuple(m.tiles) for m in self.melds),
+                win,
+            )
+            if getattr(self, "_last_stat_sig", None) == sig:
+                return
+            self._last_stat_sig = sig
+            self.stats.record(
+                ts_ms=int(time.time() * 1000),
+                user_key="desktop", uuid="", client_type="desktop",
+                ip="", ua="", total_fan=int(s.total), base=int(s.base),
+                reach=1 if s.ok else 0, fans_n=len(s.fans), sig=sig,
+                # ★ v2.9.9：番种名落库（明细里能看到这一手算了哪些番种）
+                fans=fans_text_(s.fans),
+                # ★ v2.9.12：昵称填本机计算机名 —— 统计里一眼认出「这是本机」。
+                #   **必须先登记进昵称表**：统计表（聚合）的「昵称」列读的是
+                #   user_nick 表，光写进 score_log 只能让明细显示，统计里还是「-」。
+                #   计算机名不会变，所以只在第一次 / 改名时才写库，别每次算番都写。
+                nick=self._desktop_nick(),
+            )
+        except Exception as _exc:      # noqa: BLE001
+            sys.stderr.write("[stats] 桌面算番记录失败：%r\n" % (_exc,))
 
     def _add_fan_item(self, text: str, color: str = "") -> None:
         item = QListWidgetItem(text)
@@ -2104,6 +3062,423 @@ class MahjongFanWindow(QMainWindow):
             if not s.message and s.fans:
                 return t, True
         return None, False
+
+
+# ------------------------------------------------------------------ 统计窗口（★ v2.9.6）
+
+# ★ v2.9.12：桌面端（本机程序）没有 UA，所以「系统 / 浏览器 / 设备型号」三列
+#   在桌面行上本来会是一片「-」。但本机有两样东西是**真拿得到**的：
+#     · 计算机名（platform.node()，Windows 上形如 DESKTOP-A1B2C3）
+#       —— 这是全项目唯一一处真正的「设备名称」，填进「昵称」列
+#     · 系统名（platform.system()）—— 填进「系统」列，桌面行就不会空着
+#   浏览器 / 型号桌面端确实没有，老实显示「桌面程序」和「-」。
+DESKTOP_OS = "Windows"
+try:
+    _s = (platform.system() or "").strip()
+    if _s:
+        DESKTOP_OS = _s
+except Exception:       # noqa: BLE001
+    pass
+
+
+def desktop_nick() -> str:
+    """本机计算机名 → 桌面记录的「昵称」列（拿不到就空串，不让统计崩）"""
+    try:
+        n = (platform.node() or "").strip()
+        return n[:24] if n else ""
+    except Exception:   # noqa: BLE001
+        return ""
+
+
+def _ua_brief(ua: str) -> str:
+    """把一长串 User-Agent 压成一个一眼认得出的设备名（完整串放单元格 tip 里）"""
+    low = (ua or "").lower()
+    if not low:
+        return "-"
+    for kw, name in (("micromessenger", "微信"), ("ipad", "iPad"),
+                     ("iphone", "iPhone"), ("harmony", "鸿蒙"),
+                     ("android", "Android"), ("windows", "Windows"),
+                     ("macintosh", "Mac"), ("mac os x", "Mac"),
+                     ("linux", "Linux")):
+        if kw in low:
+            return name
+    return (ua or "").split("/")[0].strip()[:14] or "-"
+
+
+def _device_cell(key: str, r: dict) -> str:
+    """★ v2.9.12：昵称 / 系统 / 浏览器 / 设备型号 四列的取值（统计窗口与明细窗口共用）
+
+    桌面行（client_type='desktop'）压根没有 UA，所以「系统」列会落到本机系统名、
+    「浏览器」列显示「桌面程序」—— 免得整列一片「-」看着像坏了。
+    「设备型号」桌面端确实没有（那是手机的概念），老实显示「-」。
+    """
+    if key == "nick":
+        return str(r.get("nick") or "-")
+    if key == "os":
+        v = str(r.get("os") or "")
+        if v and v != "-":
+            return v
+        return DESKTOP_OS if r.get("client_type") == "desktop" else "-"
+    if key == "browser":
+        v = str(r.get("browser") or "")
+        if v and v != "-":
+            return v
+        return "桌面程序" if r.get("client_type") == "desktop" else "-"
+    if key == "dev":
+        return str(r.get("dev") or "-")
+    return ""
+
+
+class StatsDialog(QDialog):
+    """算番统计查看窗口（桌面端）。与 Web 端「统计」面板共用同一份 SQLite 数据。
+
+    - 按天聚合（下拉框选某天，或「全部日期」跨天合计）
+    - 列：标识(UUID) / 客户端 / IP / UA(设备) / 合计番数 / 次数 / 达标 / 最近
+      —— ★ 用户的 IP + UUID + UA 都直接列出来，方便认出「这一条到底是谁」；
+          完整 UA 太长，表格里只显示设备名，鼠标停在单元格上看全串。
+    - ★ v2.9.7：**显示哪几列由「设置 → 通用 → 统计显示列」决定**，
+      这里只按选中的列渲染；`rebuild_columns()` 可热切换，不用关窗口重开。
+    - 统计库不可用时给出明确提示，不崩溃
+    """
+
+    # 列 key → 表头文字（key 与 mahjong_api.STATS_COL_ITEMS 完全一致）
+    COL_LABELS = dict(STATS_COL_ITEMS_)
+    # 需要「按内容撑宽」而不是「平分剩余宽度」的列（text 类）
+    WIDE_COLS = ("ua", "last")
+
+    def __init__(self, parent, stats):
+        super().__init__(parent)
+        self.stats = stats
+        self.setWindowTitle("算番统计")
+        # ★ v2.9.6：要并排显示 UUID / IP / UA，窗口比原来宽一些
+        self.setMinimumSize(860, 460)
+        self.cols: List[str] = []          # ★ v2.9.7 当前显示的列 key（按顺序）
+
+        lay = QVBoxLayout(self)
+
+        top = QHBoxLayout()
+        top.addWidget(QLabel("日期"))
+        self.cmb_day = QComboBox()
+        self.cmb_day.setMinimumWidth(170)
+        self.cmb_day.currentIndexChanged.connect(self._refresh)
+        top.addWidget(self.cmb_day)
+        self.btn_refresh = QPushButton("刷新")
+        self.btn_refresh.clicked.connect(self._refresh)
+        top.addWidget(self.btn_refresh)
+        # ★ v2.9.9：选中某个人 → 看他的逐手明细（双击表格任意一行也一样）
+        self.btn_detail = QPushButton("明细…")
+        self.btn_detail.setToolTip(
+            "看选中那个人的<b>逐手明细</b>：每一手的时间（精确到毫秒）、番数、"
+            "起番、是否达标和这一手算了哪些番种。\n"
+            "（也可以直接<b>双击</b>表格里那一行）")
+        self.btn_detail.clicked.connect(self._open_detail)
+        top.addWidget(self.btn_detail)
+        top.addStretch(1)
+        lay.addLayout(top)
+
+        self.lbl_sum = QLabel()
+        self.lbl_sum.setStyleSheet("font-weight:bold;padding:4px 0;")
+        lay.addWidget(self.lbl_sum)
+        # ★ v2.9.9：全局番种榜（「无番和×3、碰碰和×1」）
+        self.lbl_fans = QLabel()
+        self.lbl_fans.setStyleSheet("color:#666;padding:0 0 4px;")
+        self.lbl_fans.setWordWrap(True)
+        lay.addWidget(self.lbl_fans)
+
+        self.tbl = QTableWidget(0, 0)      # ★ v2.9.7：列数由 rebuild_columns() 决定
+        self.tbl.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.tbl.setSelectionBehavior(QTableWidget.SelectRows)
+        self.tbl.setAlternatingRowColors(True)
+        self.tbl.doubleClicked.connect(lambda _idx: self._open_detail())
+        lay.addWidget(self.tbl, 1)
+
+        self.lbl_tip = QLabel(
+            "IP+UUID 为主、IP+UA 兜底；按天统计，毫秒级时间戳；桌面端本地算番也计入。"
+            "★ 选中某个人点「明细…」（或双击那一行）看他的逐手记录。")
+        self.lbl_tip.setStyleSheet("color:#666;font-size:11px;")
+        lay.addWidget(self.lbl_tip)
+
+        self._init_days()
+        # ★ v2.9.8：按主窗口的设置建好列（内部会顺带刷一次数据）
+        self.rebuild_columns(self._win_cols())
+
+    def _win_cols(self) -> List[str]:
+        """从主窗口拿「显示哪几列」；拿不到就全列（统计只是附加功能，不能因此崩）"""
+        win = self.parent()
+        cols = getattr(win, "stats_cols", None)
+        if cols:
+            return list(cols)
+        return list(STATS_COL_KEYS_)
+
+    def rebuild_columns(self, cols) -> None:
+        """★ v2.9.7：重建表头（列数/列宽变了都要走这里），随后重刷数据"""
+        self.cols = list(stats_cols_normalize_(cols, STATS_COLS_DESKTOP_DEFAULT_))
+        self.tbl.setColumnCount(len(self.cols))
+        self.tbl.setHorizontalHeaderLabels(
+            [self.COL_LABELS.get(k, k) for k in self.cols])
+        hh = self.tbl.horizontalHeader()
+        for c, k in enumerate(self.cols):
+            # 「用户」吃掉剩余宽度；「番种」那串可能很长，给固定宽度 + 可拖动（不然会把别的列挤出屏幕）
+            if k == "user":
+                mode = QHeaderView.Stretch
+            elif k == "fans":
+                mode = QHeaderView.Interactive
+            else:
+                mode = QHeaderView.ResizeToContents
+            hh.setSectionResizeMode(c, mode)
+        if "fans" in self.cols:
+            self.tbl.setColumnWidth(self.cols.index("fans"), 240)
+        self._refresh()
+
+    def _init_days(self) -> None:
+        self.cmb_day.blockSignals(True)
+        self.cmb_day.clear()
+        self.cmb_day.addItem("全部日期", None)
+        if self.stats is not None:
+            try:
+                for d in self.stats.list_days():
+                    self.cmb_day.addItem(d, d)
+            except Exception:      # noqa: BLE001
+                pass
+        self.cmb_day.blockSignals(False)
+
+    def _refresh(self) -> None:
+        if self.stats is None:
+            self.lbl_sum.setText("统计库不可用（mahjong_stats 导入失败）")
+            self.tbl.setRowCount(0)
+            return
+        day = self.cmb_day.currentData()
+        try:
+            rows = self.stats.aggregate(day)
+            sum_ = self.stats.total_summary(day)
+        except Exception as exc:    # noqa: BLE001
+            self.lbl_sum.setText("读取统计失败：%r" % (exc,))
+            self.tbl.setRowCount(0)
+            return
+        self.lbl_sum.setText("共 %d 手 / %d 番 / %d 人"
+                             % (sum_.get("hands", 0), sum_.get("fan", 0),
+                                sum_.get("users", 0)))
+        # ★ v2.9.9：全局番种榜
+        fans_txt = str(sum_.get("fans_txt") or "")
+        self.lbl_fans.setText("番种：" + fans_txt if fans_txt
+                              else "番种：（还没有记录到番种——老记录没有番种名，"
+                                   "升级后新算的手才有）")
+        self._rows = rows           # ★ v2.9.9：明细窗口要按 user_key 反查，先留一份
+        self.tbl.setRowCount(len(rows))
+        for i, u in enumerate(rows):
+            for c, k in enumerate(self.cols):
+                item = QTableWidgetItem(self._cell_text(k, u))
+                tip = self._cell_tip(k, u)          # ★ 完整 UUID / UA 挂 tooltip
+                if tip:
+                    item.setToolTip(tip)
+                self.tbl.setItem(i, c, item)
+
+    def _open_detail(self) -> None:
+        """★ v2.9.9：打开选中那个人的「逐手明细」窗口"""
+        if self.stats is None:
+            QMessageBox.information(self, "明细", "统计库不可用，看不了明细。")
+            return
+        row = self.tbl.currentRow()
+        rows = getattr(self, "_rows", None) or []
+        if row < 0 or row >= len(rows):
+            QMessageBox.information(self, "明细", "先在表格里选中一个人（点它那一行）。")
+            return
+        u = rows[row]
+        dlg = StatsDetailDialog(self, self.stats,
+                                str(u.get("user_key") or ""),
+                                self.cmb_day.currentData())
+        dlg.exec()
+
+    # ---- 单元格取值（★ v2.9.7：按列 key 取，不再写死 8 列）
+    def _cell_text(self, key: str, u: dict) -> str:
+        if key == "user":
+            # 有 UUID 用 UUID，没有就退回 user_key（h:<IP+UA哈希>）
+            return str(u.get("uuid") or u.get("user_key") or "?")
+        if key == "ctype":
+            return "桌面" if u.get("client_type") == "desktop" else "Web"
+        if key == "ip":
+            return str(u.get("ip") or "-")
+        if key == "ua":
+            return _ua_brief(str(u.get("ua") or ""))
+        if key == "fan":
+            return str(u.get("total_fan", 0))
+        if key == "cnt":
+            return str(u.get("cnt", 0))
+        if key == "reach":
+            return str(u.get("reach_cnt", 0))
+        if key == "last":
+            last = u.get("last_ts")
+            return (time.strftime("%Y-%m-%d %H:%M", time.localtime(last / 1000))
+                    if last else "-")
+        if key == "fans":                       # ★ v2.9.9 番种汇总
+            return str(u.get("fans") or "-")
+        return _device_cell(key, u)             # ★ v2.9.12 昵称/系统/浏览器/型号
+
+    def _cell_tip(self, key: str, u: dict) -> str:
+        """鼠标停下来看完整串：整列被截断时靠这个认人"""
+        if key == "user":
+            return "user_key：%s" % (u.get("user_key") or "-")
+        if key == "ua":
+            return str(u.get("ua") or "（无 UA）")
+        if key == "fans":                       # ★ v2.9.9 番种串可能很长，给完整内容
+            return str(u.get("fans") or "（无番种记录）")
+        return ""
+
+
+class StatsDetailDialog(QDialog):
+    """★ v2.9.9：某个人的**逐手牌明细**（时间倒序）
+
+    统计窗口是「按人聚合」的，看不出他具体打了哪几手。这里把 `score_log` 的原始行
+    逐条列出来：时间（**精确到毫秒**）、客户端、IP、番数、起番、是否达标、
+    番种数、**这一手算了哪些番种**。顶部还给这个人的番种榜。
+
+    ★ 老记录（v2.9.9 之前算的）没有番种名 —— 那一行显示「-」，属正常，
+      不是 bug：番种是从这一版才开始落库的，历史数据补不回来。
+
+    ★ v2.9.10：**显示哪几列由「设置 → 通用 → 明细显示列」决定**，默认全开；
+      `rebuild_columns()` 可热切换，不用关窗口重开。
+    """
+
+    # 列 key → 表头文字（key 与 mahjong_api.DETAIL_COL_ITEMS 完全一致）
+    COL_LABELS = dict(DETAIL_COL_ITEMS_)
+    # 需要「按内容撑宽」而不是「平分剩余宽度」的列（文字长的）
+    WIDE_COLS = ("time", "ua")
+
+    def __init__(self, parent, stats, user_key: str, day=None):
+        super().__init__(parent)
+        self.stats = stats
+        self.user_key = user_key
+        self.day = day
+        self.cols: List[str] = []          # ★ v2.9.10 当前显示的列 key（按顺序）
+        self.setWindowTitle("逐手明细 · " + (user_key or "?"))
+        self.setMinimumSize(760, 420)
+
+        lay = QVBoxLayout(self)
+        self.lbl_head = QLabel()
+        self.lbl_head.setStyleSheet("font-weight:bold;padding:2px 0;")
+        lay.addWidget(self.lbl_head)
+        self.lbl_fans = QLabel()
+        self.lbl_fans.setWordWrap(True)
+        self.lbl_fans.setStyleSheet("color:#666;padding:0 0 4px;")
+        lay.addWidget(self.lbl_fans)
+
+        self.tbl = QTableWidget(0, 0)      # ★ v2.9.10：列数由 rebuild_columns() 决定
+        self.tbl.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.tbl.setSelectionBehavior(QTableWidget.SelectRows)
+        self.tbl.setAlternatingRowColors(True)
+        lay.addWidget(self.tbl, 1)
+
+        foot = QHBoxLayout()
+        self.lbl_tip = QLabel("时间精确到毫秒；番种从 v2.9.9 起落库，更早的记录显示「-」。")
+        self.lbl_tip.setStyleSheet("color:#666;font-size:11px;")
+        foot.addWidget(self.lbl_tip)
+        foot.addStretch(1)
+        btn = QPushButton("关闭")
+        btn.setDefault(True)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.clicked.connect(self.accept)
+        foot.addWidget(btn)
+        lay.addLayout(foot)
+        # ★ v2.9.10：先按主窗口的设置建好列（内部会顺带刷一次数据）
+        self.rebuild_columns(self._win_cols())
+
+    def _win_cols(self) -> List[str]:
+        """沿父窗口链找主窗口的 `detail_cols`；拿不到就全列（明细不能因此崩）
+
+        为什么是「沿链找」：这个窗口的 parent 可能是统计窗口（它才是主窗口的直接子窗口），
+        也可能直接是主窗口，写死一层会漏。
+        """
+        w = self.parent()
+        for _ in range(4):
+            if w is None:
+                break
+            cols = getattr(w, "detail_cols", None)
+            if cols:
+                return list(cols)
+            w = w.parent() if hasattr(w, "parent") else None
+        return list(DETAIL_COL_KEYS_)
+
+    def rebuild_columns(self, cols) -> None:
+        """★ v2.9.10：重建明细表头（列数/列宽变了都走这里），随后重刷数据"""
+        self.cols = list(detail_cols_normalize_(cols, DETAIL_COLS_DESKTOP_DEFAULT_))
+        self.tbl.setColumnCount(len(self.cols))
+        self.tbl.setHorizontalHeaderLabels(
+            [self.COL_LABELS.get(k, k) for k in self.cols])
+        hh = self.tbl.horizontalHeader()
+        for c, k in enumerate(self.cols):
+            # 「番种」「UA」这类长文本列吃掉剩余宽度；其余按内容撑宽
+            if k in ("fans", "ua"):
+                mode = QHeaderView.Stretch
+            elif k in self.WIDE_COLS:
+                mode = QHeaderView.ResizeToContents
+            else:
+                mode = QHeaderView.ResizeToContents
+            hh.setSectionResizeMode(c, mode)
+        self._refresh()
+
+    def _refresh(self) -> None:
+        if self.stats is None:
+            self.lbl_head.setText("统计库不可用")
+            self.tbl.setRowCount(0)
+            return
+        try:
+            rows = self.stats.detail_rows(self.user_key, self.day)
+            fans = self.stats.fans_top(self.day, self.user_key)
+        except Exception as exc:        # noqa: BLE001
+            self.lbl_head.setText("读取明细失败：%r" % (exc,))
+            self.tbl.setRowCount(0)
+            return
+        when = ("%s" % self.day) if self.day else "全部日期"
+        self.lbl_head.setText("%s　%s　共 %d 手" % (self.user_key, when, len(rows)))
+        self.lbl_fans.setText(
+            "番种：" + "、".join("%s×%d" % (n, c) for n, c in fans) if fans
+            else "番种：（没有番种记录）")
+        self.tbl.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            for c, k in enumerate(self.cols):
+                item = QTableWidgetItem(self._cell_text(k, r))
+                tip = self._cell_tip(k, r)
+                if tip:
+                    item.setToolTip(tip)
+                self.tbl.setItem(i, c, item)
+
+    # ---- 单元格取值（★ v2.9.10：按列 key 取，不再写死 8 列）
+    def _cell_text(self, key: str, r: dict) -> str:
+        if key == "day":
+            return str(r.get("day") or "-")
+        if key == "time":
+            ts = int(r.get("ts_ms") or 0)
+            # ★ 毫秒级：%Y-%m-%d %H:%M:%S + 三位毫秒
+            return (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts / 1000))
+                    + ".%03d" % (ts % 1000)) if ts else "-"
+        if key == "ctype":
+            return "桌面" if r.get("client_type") == "desktop" else "Web"
+        if key == "ip":
+            return str(r.get("ip") or "-")
+        if key == "ua":
+            return _ua_brief(str(r.get("ua") or ""))
+        if key == "fan":
+            return str(r.get("total_fan", 0))
+        if key == "base":
+            return str(r.get("base", 0))
+        if key == "reach":
+            return "是" if r.get("reach") else "否"
+        if key == "fans_n":
+            return str(r.get("fans_n", 0))
+        if key == "fans":
+            names = [s for s in str(r.get("fans") or "").split("|") if s.strip()]
+            return "、".join(names) or "-"
+        return _device_cell(key, r)             # ★ v2.9.12 昵称/系统/浏览器/型号
+
+    def _cell_tip(self, key: str, r: dict) -> str:
+        """长串挂 tooltip：UA 完整串、番种完整清单"""
+        if key == "ua":
+            return str(r.get("ua") or "（无 UA）")
+        if key == "fans":
+            return str(r.get("fans") or "（无番种记录）")
+        if key == "dev":                        # ★ v2.9.12 型号可能被截断，挂完整值
+            return str(r.get("dev") or "（浏览器未提供型号）")
+        return ""
 
 
 # ------------------------------------------------------------------ 入口
