@@ -147,7 +147,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QTextBrowser, QToolButton, QVBoxLayout, QWidget,
 )
 
-__version__ = "2.9.14"
+__version__ = "2.9.17"
 APP_NAME = "国标麻将算番器"                 # 中文名（界面显示，保持不变）
 APP_NAME_EN = "Mahjong_Calculator"        # ★ v2.7.3 英文名：文件名 / exe / 打包目录统一用它
 SETTINGS_FILE = "mahjong_settings.json"

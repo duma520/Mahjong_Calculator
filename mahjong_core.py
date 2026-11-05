@@ -1167,7 +1167,7 @@ EXTRA_EXCLUDES: Dict[str, List[str]] = {
     "字一色": ["幺九刻", "混幺九", "全带幺"],
     "混幺九": ["全带幺"],
     "一色四同顺": ["一色三节高", "连六", "喜相逢"],
-    "一色四节高": ["一色三同顺", "双同刻", "三同刻"],
+    "一色四节高": ["一色三同顺", "一色三节高", "双同刻", "三同刻"],
     "一色三节高": ["双同刻", "三同刻"],
     "大四喜": ["三风刻", "小四喜"],
     "小四喜": ["三风刻"],
@@ -1921,7 +1921,7 @@ def voice_sets(base_dir: Optional[str] = None) -> List[Dict[str, object]]:
     explicit = _explicit_voice_dir(base_dir)
     if explicit:
         return [{"name": os.path.basename(explicit), "dir": explicit,
-                 "clips": clip_count(explicit)}]
+                 "clips": _pack_clip_count(explicit)}]   # ★ v2.9.17：与 count_voice_clips 同口径（认分段包）
     root = find_voice_dir(base_dir)
     if not root:
         return []
@@ -1983,8 +1983,14 @@ def voice_set_of(voice_dir: Optional[str]) -> str:
 
 def count_voice_clips(base_dir: Optional[str] = None,
                       voice_set: Optional[str] = None) -> int:
-    """**选中的那一套**里现有几段可用录音（给 /api/version、--version 报个实在数字）"""
-    return clip_count(resolve_voice_dir(voice_set, base_dir))
+    """**选中的那一套**里现有几段可用录音（给 /api/version、--version 报个实在数字）
+
+    ★ v2.9.16：改用 `_pack_clip_count` —— 与 `resolve_voice_dir` 判断目录有效性的口径一致，
+    认得出「女声」那种按数字段分目录放的整句包（根目录 0 段、子目录共 346 段）；
+    原来用 `clip_count` 只数本层，分段布局会误报 0。`clip_count` 自身「只数一层」的
+    防误判保护（v2.9.13）保持不变，平铺布局（鲸宝 20 段）结果不变。
+    """
+    return _pack_clip_count(resolve_voice_dir(voice_set, base_dir))
 
 
 def find_voice_dir(base_dir: Optional[str] = None) -> Optional[str]:
