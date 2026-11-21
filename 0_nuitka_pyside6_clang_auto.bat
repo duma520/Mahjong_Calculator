@@ -3,13 +3,16 @@ rem ---------------------------------------------------------------
 rem  Nuitka build script for  Mahjong Calculator  (PySide6 / Qt6)
 rem  ASCII only. Chinese data paths are handled by Python.
 rem  Build: python -m nuitka --standalone --enable-plugin=pyside6
-rem  Output: build_output\Mahjong_Calculator.dist\  (ship the whole folder)
+rem  Output: build_output\Mahjong_Calculator\  (ship the whole folder)
+rem  All data files (icon / tiles / rules json / voice clips) are listed
+rem  in _scaffold\build_exe.py -- edit there, not here.
+rem  Dry run (no actual compile):  set EM_SKIP_BUILD=1
 rem ---------------------------------------------------------------
 setlocal
 cd /d "%~dp0"
 
-set "PY=D:\Program Files\Python310\python.exe"
-if not exist "%PY%" set "PY=python"
+rem Use the python on PATH (no hard-coded install path).
+set "PY=python"
 
 echo.
 echo === Building Mahjong Calculator (Nuitka) ===
@@ -24,7 +27,7 @@ echo.
 if not "%RC%"=="0" (
     echo *** BUILD FAILED *** exit code = %RC%
 ) else (
-    echo *** BUILD OK ***  ->  build_output\Mahjong_Calculator\
+    echo *** BUILD OK ***  -^>  build_output\Mahjong_Calculator\
 )
 echo.
 pause

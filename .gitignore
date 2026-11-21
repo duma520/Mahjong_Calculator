@@ -1,0 +1,59 @@
+# ---------------------------------------------------------------
+# 国标麻将算番器 · .gitignore
+# 原则：仓库只放「源码 + 文档 + 规则数据 + 一套牌面图 + 语音包 + 图标」
+#       其余（构建产物 / 本机数据 / 第三方版权内容 / 开发脚手架）一律不入库
+# ---------------------------------------------------------------
+
+# —— 构建产物与打包目录 ——
+build_output/
+Mahjong_Calculator/
+*.7z
+*.exe
+*.pyz
+*.pyd
+*.dll
+
+# —— Python 缓存 ——
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# —— 本机运行数据（真实算番记录，绝不上传）——
+mahjong_stats.db
+mahjong_stats.db-shm
+mahjong_stats.db-wal
+mahjong_settings.json
+
+# —— 敏感配置（真实口令只在本机）——
+.env
+*.env
+!.env.example
+
+# —— 第三方版权内容 / 受限授权字体（不入库）——
+中国国标麻将标准PDF/
+msyh.ttf
+MSYH.TTF
+fonts/
+*.ttf
+*.otf
+# 注：牌面图《麻将图/》是程序运行必需，保留入库；字体一律不入库
+
+# —— 版本归档与开发脚手架 ——
+version/
+_scaffold/
+_diag_upd.py
+2_run_verify_lowcpu.bat
+
+# —— 设计与截图素材（含微信截图，不入库）——
+软件设计构图/
+
+# —— 编辑器 / 本机工具痕迹 ——
+.vscode/
+.workbuddy/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+

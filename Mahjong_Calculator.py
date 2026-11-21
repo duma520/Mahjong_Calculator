@@ -17,9 +17,13 @@
       ★ **不用右键也能减牌**（v2.7.2，手机/触屏一样好使）：
         下面「已选牌」区里**点某一张牌＝取消这一张**：副露里点一张＝撤销那一组副露，
         「和张」点一下＝取消和张，「花牌」行点一张＝取消那张花牌。
-      ★ **红色数字角标只显示「已选张数」，点它不再减牌**（v2.8.0）：
-        红圈看着像删除按钮，误触一下手牌就少一张，所以取消了这个操作；
-        角标对鼠标透明，点在上面等于点这张牌（正常加一张），不会出现「点了没反应」。
+      ★ **牌上的小圆点只显示张数，点它不再减牌**（v2.8.0）：
+        圆点看着像删除按钮，误触一下手牌就少一张，所以取消了这个操作；
+        圆点对鼠标透明，点在上面等于点这张牌（正常加一张），不会出现「点了没反应」。
+      ★ **一牌一类一色**（v2.9.18）：一张牌可能同时算进好几类（例如既是立牌、又进了碰、
+        还是和张），那就并排多个圆点、每类各显示自己的张数。
+        立牌=红 / 暗杠=紫 / 明杠=橙 / 碰=蓝 / 吃=绿 / 胡牌=金（金字配深色字）。
+        圆点放不下时按 20 → 16 → 13px 缩小，一行最多两个、再多换第二排。
       ★ 牌与牌之间只留 4px（v2.4.2）：牌是固定尺寸，多余宽度靠 `setColumnStretch(空列, 1)`
         全部让给右侧空白，不要在 grid 上直接铺开（否则 9 列被均匀撑宽、缝隙很大）。
     · 立牌 = 手上其他牌（默认模式）；吃 / 碰 / 明杠 / 暗杠 都是「先点按钮，再选牌」：
@@ -86,8 +90,10 @@ Web 版（给手机/平板**浏览器**用；★ 不是给程序调用的接口�
       并禁掉了长按系统菜单与文本选择（`-webkit-touch-callout:none; user-select:none`）。
     - ★ **桌面版也照这个来**（v2.7.2）：「已选牌」区（副露 / 立牌 / 和张 / 花牌）里
       点某一张＝取消这一张；右键仍然可用，不影响鼠标习惯。
-    - ★ **红色数字角标不再可点**（v2.8.0，桌面版与 Web 版同步）：它只是「已选张数」
-      的显示；红圈像删除按钮，误触一下就少一张牌，所以这个减牌操作已取消。
+    - ★ **牌上的圆点不再可点**（v2.8.0，桌面版与 Web 版同步）：它只显示张数；
+      圆点像删除按钮，误触一下就少一张牌，所以这个减牌操作已取消。
+    - ★ **六类彩色圆点**（v2.9.18，桌面版与 Web 版同一套）：立牌红 / 暗杠紫 / 明杠橙 /
+      碰蓝 / 吃绿 / 胡牌金；同一张牌跨多类时并排显示，每类一个数字，互不合并。
     - ★ Web 端也有**读番**（v2.9.0）：★ v2.9.4 起读番开关在页面底栏「**设置**」里（原来在模式行），
       点开后每算出总番就由**手机/平板自己念**（页面取 /api/readout 的清单，再逐段播 /audio/xxx；
       不用电脑出声，也不用复制音频）；用哪一套录音在同一个「设置」弹窗里选（★ v2.9.3）。
@@ -134,20 +140,24 @@ import platform
 import random
 import sys
 import time
+import traceback
 from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (QAction, QColor, QDesktopServices, QFont, QIcon,
                            QPainter, QPen, QPixmap)
 from PySide6.QtWidgets import (
-    QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+    QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox,
+    QDialog, QDialogButtonBox,
     QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
-    QRadioButton, QScrollArea, QStackedWidget, QTabWidget, QTableWidget,
+    QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox,
+    QProgressBar, QPushButton,
+    QRadioButton, QScrollArea, QSpinBox, QStackedWidget, QTabWidget,
+    QTableWidget,
     QTableWidgetItem, QTextBrowser, QToolButton, QVBoxLayout, QWidget,
 )
 
-__version__ = "2.9.17"
+__version__ = "2.9.30"
 APP_NAME = "国标麻将算番器"                 # 中文名（界面显示，保持不变）
 APP_NAME_EN = "Mahjong_Calculator"        # ★ v2.7.3 英文名：文件名 / exe / 打包目录统一用它
 SETTINGS_FILE = "mahjong_settings.json"
@@ -192,6 +202,13 @@ FLOWER_SIZE = QSize(30, 40)
 WIN_W, WIN_H = 680, 940        # 默认窗口尺寸
 MIN_W, MIN_H = 600, 560        # 最小窗口尺寸（再小牌池就会被挤）
 GEO_VER = 2                    # 几何版本：<2 表示旧版（牌铺开 + 最小宽度 1020）存下的尺寸
+
+# ★ v2.9.22：每页各自合适的宽度（用户提的：算番页不用那么宽，统计页可以宽点）。
+#   切页时**只改宽度**，高度和位置一律不动；窗口最大化 / 全屏时什么都不改。
+#   任何一页被手动拉过，就记住那一页的宽度（存 settings["page_widths"]，
+#   键是页面索引的字符串）；没有记录的页用这里的预设值。
+#   索引见 _build_ui：0 算番 / 1 统计 / 2 番表 / 3 用法。
+PAGE_WIDTHS = {0: 680, 1: 1180, 2: 900, 3: 880}
 
 # ★ 花牌（`麻将图\` 里的 P1~P4 = 梅兰竹菊，S1~S4 = 春夏秋冬）
 # 每张 1 分、不计入 8 分起和分；花牌不占 14 张手牌（补花后另抓）
@@ -288,8 +305,9 @@ def save_settings(data: dict) -> bool:
 # ------------------------------------------------------------------ 引擎导入
 
 try:
-    from mahjong_core import (VOICE_DIR_NAME, VOICE_SET_DEFAULT, MahjongFanCalculator, Meld,
-                              Options, VoicePlayer, cli_main, cli_wanted, code_of,
+    from mahjong_core import (BADGE_COLORS, BADGE_DARK_TEXT, BADGE_ORDER, BADGE_TEXTS,
+                              VOICE_DIR_NAME, VOICE_SET_DEFAULT, MahjongFanCalculator, Meld,
+                              Options, VoicePlayer, all_badges, cli_main, cli_wanted, code_of,
                               counts_of, count_voice_clips, find_voice_dir, is_suit,
                               name_of, readout_info, resolve_voice_dir, suit_of, tile_of,
                               voice_set_label, voice_set_names, voice_set_of, voice_sets)
@@ -304,6 +322,13 @@ except Exception as _exc:       # noqa: BLE001
     VOICE_SET_DEFAULT = "女声"
     resolve_voice_dir = voice_sets = voice_set_names = None     # type: ignore[assignment]
     voice_set_label = voice_set_of = None                       # type: ignore[assignment]
+    all_badges = None                                           # type: ignore[assignment]
+    BADGE_ORDER = ("stand", "angang", "minggang", "peng", "chi", "win")
+    BADGE_COLORS = {"stand": "#e74c3c", "angang": "#8e44ad", "minggang": "#e67e22",
+                    "peng": "#2f7ff0", "chi": "#27ae60", "win": "#f1c40f"}
+    BADGE_TEXTS = {"stand": "立牌", "angang": "暗杠", "minggang": "明杠",
+                   "peng": "碰", "chi": "吃", "win": "胡牌"}
+    BADGE_DARK_TEXT = ("win",)
     code_of = name_of = tile_of = suit_of = is_suit = counts_of = None
     cli_main = cli_wanted = None     # type: ignore[assignment]
     CORE_IMPORT_ERROR = repr(_exc)
@@ -338,11 +363,15 @@ except Exception as _exc:       # noqa: BLE001
 # ★ v2.9.6：算番统计库（SQLite / WAL）。落库失败不影响算番主流程。
 try:
     from mahjong_stats import (StatsDB as StatsDB_,
-                               fans_text as fans_text_)
+                               fans_text as fans_text_,
+                               DEDUPE_DEFAULT_WINDOW_SEC,
+                               SAME_HAND_UPSERT_MS as SAME_HAND_UPSERT_MS_)
     STATS_IMPORT_ERROR = None
 except Exception as _exc:       # noqa: BLE001
     StatsDB_ = None                 # type: ignore[assignment]
     STATS_IMPORT_ERROR = repr(_exc)
+    DEDUPE_DEFAULT_WINDOW_SEC = 120     # 与 mahjong_stats 保持一致（导入失败时的兜底）
+    SAME_HAND_UPSERT_MS_ = 180000       # ★ v2.9.27 同手牌合并窗口（3 分钟）
 
     def fans_text_(fans) -> str:    # type: ignore[misc]
         """兜底：统计模块导入不了时，明细里番种就是空的，其余照常"""
@@ -354,14 +383,21 @@ try:
     from mahjong_api import (STATS_COL_ITEMS as STATS_COL_ITEMS_,
                              STATS_COL_KEYS as STATS_COL_KEYS_,
                              STATS_COLS_DESKTOP_DEFAULT as STATS_COLS_DESKTOP_DEFAULT_,
+                             STATS_COLS_WEB_DEFAULT as STATS_COLS_WEB_DEFAULT_,
                              stats_cols_normalize as stats_cols_normalize_,
                              stats_cols_new_merged as stats_cols_new_merged_,
                              # ★ v2.9.10：逐手明细的「显示哪些列」
                              DETAIL_COL_ITEMS as DETAIL_COL_ITEMS_,
                              DETAIL_COL_KEYS as DETAIL_COL_KEYS_,
                              DETAIL_COLS_DESKTOP_DEFAULT as DETAIL_COLS_DESKTOP_DEFAULT_,
+                             DETAIL_COLS_WEB_DEFAULT as DETAIL_COLS_WEB_DEFAULT_,
                              detail_cols_normalize as detail_cols_normalize_,
-                             detail_cols_new_merged as detail_cols_new_merged_)
+                             detail_cols_new_merged as detail_cols_new_merged_,
+                             # ★ v2.9.22：统计页最下面「最近记录」表显示哪些列
+                             REC_COL_ITEMS as REC_COL_ITEMS_,
+                             REC_COL_KEYS as REC_COL_KEYS_,
+                             REC_COLS_DEFAULT as REC_COLS_DEFAULT_,
+                             rec_cols_normalize as rec_cols_normalize_)
 except Exception as _exc:       # noqa: BLE001
     # ★ v2.9.12：与 mahjong_api.STATS_COL_ITEMS 保持同步（多了 nick/os/browser/dev）
     STATS_COL_ITEMS_ = (("user", "用户"), ("nick", "昵称"), ("ctype", "客户端"),
@@ -371,6 +407,9 @@ except Exception as _exc:       # noqa: BLE001
                         ("fans", "番种"))
     STATS_COL_KEYS_ = tuple(k for k, _ in STATS_COL_ITEMS_)
     STATS_COLS_DESKTOP_DEFAULT_ = STATS_COL_KEYS_
+    # ★ v2.9.21：与 mahjong_api.STATS_COLS_WEB_DEFAULT 保持一致
+    STATS_COLS_WEB_DEFAULT_ = ("user", "nick", "ctype", "os", "browser", "dev",
+                               "ip", "fan", "cnt", "reach", "last")
 
     def _norm_(val, keys, default):     # type: ignore[misc]
         if isinstance(val, (list, tuple)):
@@ -402,6 +441,9 @@ except Exception as _exc:       # noqa: BLE001
                          ("fans_n", "番种数"), ("fans", "番种"))
     DETAIL_COL_KEYS_ = tuple(k for k, _ in DETAIL_COL_ITEMS_)
     DETAIL_COLS_DESKTOP_DEFAULT_ = DETAIL_COL_KEYS_
+    # ★ v2.9.21：与 mahjong_api.DETAIL_COLS_WEB_DEFAULT 保持一致
+    DETAIL_COLS_WEB_DEFAULT_ = ("time", "nick", "ctype", "os", "browser", "dev",
+                                "ip", "fan", "reach", "fans")
 
     def detail_cols_normalize_(val, default=DETAIL_COLS_DESKTOP_DEFAULT_):  # type: ignore[misc]
         return _norm_(val, DETAIL_COL_KEYS_, default)
@@ -412,6 +454,19 @@ except Exception as _exc:       # noqa: BLE001
             if k not in cur:
                 cur.append(k)
         return tuple(cur)
+
+    # ★ v2.9.22：与 mahjong_api.REC_COL_ITEMS 保持同步
+    REC_COL_ITEMS_ = (("time", "时间"), ("nick", "昵称"), ("ctype", "客户端"),
+                      ("user", "用户"), ("os", "系统"), ("browser", "浏览器"),
+                      ("dev", "设备型号"), ("ip", "IP"), ("ua", "UA（设备）"),
+                      ("fan", "番数"), ("base", "起番"), ("reach", "达标"),
+                      ("fans_n", "番种数"), ("fans", "番种"))
+    REC_COL_KEYS_ = tuple(k for k, _ in REC_COL_ITEMS_)
+    REC_COLS_DEFAULT_ = ("time", "nick", "ctype", "fan", "base", "reach",
+                         "fans_n", "fans")
+
+    def rec_cols_normalize_(val, default=REC_COLS_DEFAULT_):  # type: ignore[misc]
+        return _norm_(val, REC_COL_KEYS_, default)
 
     STATS_COLS_API_ERROR = repr(_exc)
 
@@ -493,25 +548,76 @@ def clear_layout(layout) -> None:
         del item
 
 
+# ★ v2.9.18：一张牌可能同时属于多类（立牌 / 暗杠 / 明杠 / 碰 / 吃 / 胡牌），
+#   每类**各画一个圆点、各显示自己的张数**，不合并成一个数字。
+#   圆点尺寸随个数缩小：1 个＝20px（与老版红角标一样大）→ 2 个＝16px → 3 个以上＝13px，
+#   一行最多放 2 个，再多换到第二排（牌池按钮只有 54px 宽，不缩会盖住牌面）。
+BADGE_SIZES = {1: 20, 2: 16}                 # 缺省（3 个及以上）＝ 13
+BADGE_SIZE_MIN = 13
+BADGE_PER_ROW = 2
+
+
+def badge_size_for(n: int) -> int:
+    """这一类共有 n 个圆点时，每个圆点画多大（px）"""
+    return BADGE_SIZES.get(n, BADGE_SIZE_MIN)
+
+
 class CountBadge(QLabel):
-    """牌选择区的「已选张数」红角标（★ v2.8.0 起**只显示张数，不再能点**）
+    """牌选择区右上角的彩色角标（★ v2.8.0 起**只显示张数，不再能点**）
 
     v2.7.2 曾让红角标「点一下＝减一张」，但红圈看着像删除按钮，太容易误触
     （想加牌却点掉一张）。现在角标纯做计数显示：减牌请**右键**，或在下面
     「已选牌」区点某一张牌取消。角标对鼠标事件透明，所以点在它上面＝点在
     这张牌上（左键加一张），不会留下「点了没反应」的死角。
+
+    ★ v2.9.18：一个圆点只表示**一类**身份，颜色由 `kind` 决定
+      （立牌红 / 暗杠紫 / 明杠橙 / 碰蓝 / 吃绿 / 胡牌金，见 mahjong_core.BADGE_COLORS）。
+    默认 `kind="stand"`，所以 v2.9.18 之前按 `CountBadge(parent)` 建出来仍是红角标。
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, kind: str = "stand"):
         super().__init__(parent)
+        self.kind = kind
         self.setAlignment(Qt.AlignCenter)
-        self.setFixedSize(20, 20)
-        self.setToolTip("已选张数（减牌：右键，或在下面「已选牌」里点一张）")
-        self.setStyleSheet(
-            "background:#e74c3c;color:#fff;border-radius:10px;font-size:11px;"
-            "font-weight:bold;")
         # ★ v2.8.0：角标只是装饰，别拦住底下牌按钮的点击（也避免误触减牌）
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setToolTip(self._tooltip())
+        self.resize_badge(BADGE_SIZES[1])
+        self.apply_style()
+
+    # ---- 配色与文案
+    def _color(self) -> str:
+        return BADGE_COLORS.get(self.kind, BADGE_COLORS["stand"])
+
+    def _text_color(self) -> str:
+        return "#333" if self.kind in BADGE_DARK_TEXT else "#fff"
+
+    def _label(self) -> str:
+        return BADGE_TEXTS.get(self.kind, "")
+
+    def _tooltip(self) -> str:
+        label = self._label()
+        if self.kind == "stand":
+            return "已选张数（立牌：减牌请右键，或在下面「已选牌」里点一张）"
+        return "%s（本张牌在这一类里有几张；减牌请右键，或在下面「已选牌」里点一张）" % label
+
+    def apply_style(self) -> None:
+        size = max(self.width(), BADGE_SIZE_MIN)
+        radius = size // 2
+        font = 11 if size >= 20 else (10 if size >= 16 else 9)
+        self.setStyleSheet(
+            "background:%s;color:%s;border-radius:%dpx;font-size:%dpx;"
+            "font-weight:bold;border:1px solid #fff;"
+            % (self._color(), self._text_color(), radius, font))
+
+    def resize_badge(self, size: int) -> None:
+        self.setFixedSize(size, size)
+        self.apply_style()
+
+    def refresh(self) -> None:
+        """颜色 / 提示 随 `kind` 变（kind 只在建的时候给，这里兜底）"""
+        self.setToolTip(self._tooltip())
+        self.apply_style()
 
 
 class ClickTile(QLabel):
@@ -571,11 +677,53 @@ class TileButton(QToolButton):
                 pass
         self._count = 0
         # ★ v2.8.0：角标只显示张数（不可点，避免误触减牌）
-        self.badge = CountBadge(self)
-        self.badge.move(self.width() - self.badge.width() - 1, 1)
+        # ★ v2.9.18：一张牌可能同时是立牌 + 碰 + 胡牌 …… 每类一个圆点、各显示自己的张数。
+        #   `self.badges` 按类别存（懒建：没出现过的类别不建控件）；
+        #   `self.badge` 固定指向「立牌」那个（老代码 / 老测试都认这个名字）。
+        self.badges: Dict[str, CountBadge] = {}
+        self.badge = self._ensure_badge("stand")
         self.badge.hide()
         self.clicked.connect(lambda: self.leftClicked.emit(self.code))
         self._apply_style()
+
+    # ---- 多色角标（v2.9.18）
+    def _ensure_badge(self, kind: str) -> CountBadge:
+        b = self.badges.get(kind)
+        if b is None:
+            b = CountBadge(self, kind)
+            b.hide()
+            self.badges[kind] = b
+        return b
+
+    def set_badges(self, counts) -> None:
+        """按类别刷新角标：`counts` 形如 `{"stand": 2, "peng": 3}`（张数 0 的不建不显）"""
+        counts = dict(counts or {})
+        # 顺序固定（立牌 / 暗杠 / 明杠 / 碰 / 吃 / 胡牌），圆点位置才不会跳来跳去
+        kinds = [k for k in BADGE_ORDER if counts.get(k, 0) > 0]
+        for k in list(self.badges):
+            if k not in kinds:
+                self.badges[k].hide()
+        if not kinds:
+            self._count = 0
+            self.set_selected(False)
+            return
+        total = len(kinds)
+        size = badge_size_for(total)
+        for i, kind in enumerate(kinds):
+            b = self._ensure_badge(kind)
+            b.resize_badge(size)
+            b.setText(str(counts[kind]))
+            # 从右上角往左排，一行 BADGE_PER_ROW 个，多的换第二排
+            col = i % BADGE_PER_ROW
+            row = i // BADGE_PER_ROW
+            x = self.width() - 1 - (col + 1) * size - col * 1
+            y = 1 + row * (size + 1)
+            b.move(max(0, x), y)
+            b.show()
+            b.raise_()
+        # 兼容老代码/老测试：`_count` 与「是否已选」都跟「立牌」走
+        self._count = counts.get("stand", 0)
+        self.set_selected(True)
 
     # ---- 外观
     def _apply_style(self) -> None:
@@ -587,14 +735,8 @@ class TileButton(QToolButton):
             "border:2px solid #2f7ff0;}")
 
     def set_count(self, n: int) -> None:
-        self._count = n
-        if n > 0:
-            self.badge.setText(str(n))
-            self.badge.show()
-            self.badge.raise_()
-        else:
-            self.badge.hide()
-        self.set_selected(n > 0)
+        """只设「立牌」张数（老接口，等价于 set_badges({"stand": n})）"""
+        self.set_badges({"stand": n} if n > 0 else {})
 
     def set_selected(self, on: bool) -> None:
         self.setProperty("selected", "true" if on else "false")
@@ -664,7 +806,11 @@ HELP_TEXT = """
 <li><b>不用右键也能减牌</b>（手机 / 触屏一样好使）：
 下面「已选牌」区里<b>点某一张牌也会取消这一张</b>
 （副露里点一张＝撤销那一组，点「和张」＝取消和张，点「花牌」行＝取消那张花牌）。
-牌上的<b>红色数字</b>只是「已选张数」，<b>点它不再减牌</b>（点在上面＝点这张牌）。</li>
+牌上的<b>彩色圆点</b>只是张数，<b>点它不再减牌</b>（点在上面＝点这张牌）。
+<b>颜色区分牌属于哪一类</b>：<span style="color:#e74c3c">■立牌</span> 
+<span style="color:#8e44ad">■暗杠</span> <span style="color:#e67e22">■明杠</span> 
+<span style="color:#2f7ff0">■碰</span> <span style="color:#27ae60">■吃</span> 
+<span style="color:#b7950b">■胡牌</span>；一张牌同时属于多类时会并排好几个圆点。</li>
 <li><b>立牌</b>（默认）：点出来的牌都算「手上其他牌」，即门前的暗手牌。</li>
 <li><b>吃 / 碰 / 明杠 / 暗杠</b>：都是<b>先点按钮，再选牌</b>。
     <ul>
@@ -1092,8 +1238,9 @@ class SettingsDialog(QDialog):
         lay.addWidget(self._title("统计显示列"))     # ★ v2.9.7
         lay.addWidget(self._note(
             "「工具 → 统计」窗口里显示哪几列：勾几个就显示几个（<b>至少留一个</b>）。<br>"
-            "手机 / 平板上「统计」面板的<b>默认列</b>也跟着这里走；"
-            "那台设备在自己「设置」里改过，就以设备上的选择为准。"))
+            "★ <b>这里是所有设备的唯一开关</b>：手机 / 平板（Web 版）上的"
+            "「统计」面板就显示这几列，<b>改完它们刷新页面就跟着变</b>；"
+            "手机上的设置只能看、不能改。"))
         grid_sc = QGridLayout()
         grid_sc.setSpacing(4)
         self.stat_col_boxes: Dict[str, QCheckBox] = {}
@@ -1113,8 +1260,16 @@ class SettingsDialog(QDialog):
         _btn_sc_none = QPushButton("只留「用户」")
         _btn_sc_none.setCursor(Qt.PointingHandCursor)
         _btn_sc_none.clicked.connect(lambda _c=False: self._set_stat_cols_all(False))
+        # ★ v2.9.21：一键回到「手机常用」套餐（屏窄只放得下这几列）
+        _btn_sc_web = QPushButton("手机常用")
+        _btn_sc_web.setCursor(Qt.PointingHandCursor)
+        _btn_sc_web.setToolTip("恢复成手机上看得清的那 %d 列"
+                              % len(STATS_COLS_WEB_DEFAULT_))
+        _btn_sc_web.clicked.connect(
+            lambda _c=False: self._set_stat_cols_preset(STATS_COLS_WEB_DEFAULT_))
         _rowsc.addWidget(_btn_sc_all)
         _rowsc.addWidget(_btn_sc_none)
+        _rowsc.addWidget(_btn_sc_web)
         _rowsc.addStretch(1)
         lay.addLayout(_rowsc)
 
@@ -1123,8 +1278,8 @@ class SettingsDialog(QDialog):
         lay.addWidget(self._note(
             "「统计」里选中某个人点「明细…」后，那个<b>逐手明细</b>窗口显示哪几列："
             "勾几个就显示几个（<b>至少留一个</b>）。<br>"
-            "手机 / 平板上明细面板的<b>默认列</b>也跟着这里走；"
-            "那台设备在自己「设置」里改过，就以设备上的选择为准。"))
+            "同上，<b>这里是所有设备的唯一开关</b>：手机 / 平板上的"
+            "逐手明细也只显示这几列，<b>改完刷新就跟着变</b>。"))
         grid_dc = QGridLayout()
         grid_dc.setSpacing(4)
         self.detail_col_boxes: Dict[str, QCheckBox] = {}
@@ -1144,10 +1299,37 @@ class SettingsDialog(QDialog):
         _btn_dc_min = QPushButton("只留「时间」")
         _btn_dc_min.setCursor(Qt.PointingHandCursor)
         _btn_dc_min.clicked.connect(lambda _c=False: self._set_detail_cols_all(False))
+        # ★ v2.9.21：一键回到「手机常用」套餐
+        _btn_dc_web = QPushButton("手机常用")
+        _btn_dc_web.setCursor(Qt.PointingHandCursor)
+        _btn_dc_web.setToolTip("恢复成手机上看得清的那 %d 列"
+                              % len(DETAIL_COLS_WEB_DEFAULT_))
+        _btn_dc_web.clicked.connect(
+            lambda _c=False: self._set_detail_cols_preset(DETAIL_COLS_WEB_DEFAULT_))
         _rowdc.addWidget(_btn_dc_all)
         _rowdc.addWidget(_btn_dc_min)
+        _rowdc.addWidget(_btn_dc_web)
         _rowdc.addStretch(1)
         lay.addLayout(_rowdc)
+
+        # ---- ★ v2.9.27：写入行为（同一手牌只留一条）
+        lay.addWidget(self._title("记录方式"))
+        self.cb_same_hand_merge = QCheckBox("同一手牌 3 分钟内只算一条（改选项重算就地更新）")
+        self.cb_same_hand_merge.setChecked(bool(getattr(self.win, "same_hand_merge", True)))
+        self.cb_same_hand_merge.setToolTip(
+            "勾上（默认）：同一手牌在 3 分钟内反复算（改选项、换番种），库里只留一条，\n"
+            "  番数取你最后看到的那个数 —— 不会因为来回试而把统计撑大。\n"
+            "取消勾选：恢复成老样子，算一次记一条（排查统计问题、交叉核对时用）。\n"
+            "两种都只影响「以后怎么记」，已经记下的数据不会被删；\n"
+            "想收拾以前的重复记录，用统计页上的「清理重复…」。\n"
+            "桌面端和手机（Web 版）共用同一个统计库，所以这个开关两端一起生效。")
+        self.cb_same_hand_merge.toggled.connect(
+            lambda c=False: self.win._set_same_hand_merge(bool(c)))   # noqa: SLF001
+        lay.addWidget(self.cb_same_hand_merge)
+        lay.addWidget(self._note(
+            "关掉以后，同一手牌每算一次就多一条记录 —— 手机上每动一个选项都会重算，"
+            "很容易把「次数」和「合计番数」撑大。<b>只在核对数据时临时关</b>，"
+            "查完记得勾回来。"))
         lay.addStretch(1)
         return page
 
@@ -1160,11 +1342,29 @@ class SettingsDialog(QDialog):
                 _box.setChecked(want)
         self._on_stat_col_changed()
 
+    def _set_stat_cols_preset(self, keys) -> None:
+        """★ v2.9.21：按一组预设 key 勾选（「手机常用」按钮用）"""
+        keys = tuple(keys or ())
+        for _key, _box in self.stat_col_boxes.items():
+            want = _key in keys
+            if _box.isChecked() != want:
+                _box.setChecked(want)
+        self._on_stat_col_changed()
+
     # ---- 明细显示列（★ v2.9.10）
     def _set_detail_cols_all(self, all_on: bool) -> None:
         """「全选」 / 「只留『时间』」两个快捷按钮"""
         for _key, _box in self.detail_col_boxes.items():
             want = True if all_on else (_key == "time")
+            if _box.isChecked() != want:
+                _box.setChecked(want)
+        self._on_detail_col_changed()
+
+    def _set_detail_cols_preset(self, keys) -> None:
+        """★ v2.9.21：按一组预设 key 勾选（「手机常用」按钮用）"""
+        keys = tuple(keys or ())
+        for _key, _box in self.detail_col_boxes.items():
+            want = _key in keys
             if _box.isChecked() != want:
                 _box.setChecked(want)
         self._on_detail_col_changed()
@@ -1324,6 +1524,7 @@ class MahjongFanWindow(QMainWindow):
         self.buttons: Dict[str, TileButton] = {}
         self.candidates: List[Tuple[int, object]] = []
         self._loading = True
+        self._adjusting_width = False      # ★ v2.9.22：正在按页调宽（此时不记手动宽度）
         self._global_settings: dict = load_settings()
         # ★ v2.9.0 读番：念「合计 N 番」用的播放器 + 记录（同一个番数不重复念）
         self.voice = VoicePlayer() if VoicePlayer else None
@@ -1334,12 +1535,28 @@ class MahjongFanWindow(QMainWindow):
         # ★ v2.9.3：读番用哪一套录音（《数字》下的子目录名；桌面端与 Web 端默认值都看它）
         self.voice_set = str(self._global_settings.get("voice_set") or VOICE_SET)
         # ★ v2.9.7：统计面板显示哪几列（桌面端统计窗口用；同时作为 Web 端的默认值）
-        # ★ v2.9.9：老设置里没有的**新列**（番种）自动补到末尾，否则升级后永远看不到
-        self.stats_cols: List[str] = list(stats_cols_new_merged_(
+        # ★ v2.9.24：只规整、不补新列。旧写法走 *_new_merged_，会把用户主动勾掉的列
+        #   （nick/os/browser/dev…）在重启后又补回来，等于设置存不住。真正的老设置没有
+        #   这个键时 normalize 直接退回桌面端默认（=全列），新列照样能看到。
+        self.stats_cols: List[str] = list(stats_cols_normalize_(
             self._global_settings.get("stats_cols"), STATS_COLS_DESKTOP_DEFAULT_))
         # ★ v2.9.10：逐手明细显示哪几列（桌面端明细窗口用；同时作为 Web 端的默认值）
-        self.detail_cols: List[str] = list(detail_cols_new_merged_(
+        # ★ v2.9.24：同上，只 normalize
+        self.detail_cols: List[str] = list(detail_cols_normalize_(
             self._global_settings.get("detail_cols"), DETAIL_COLS_DESKTOP_DEFAULT_))
+        # ★ v2.9.22：统计页最下面「最近记录」表显示哪几列（只有桌面端有这张表）
+        #   默认＝原来写死的 8 列，升级后第一眼和以前一模一样
+        self.rec_cols: List[str] = list(rec_cols_normalize_(
+            self._global_settings.get("rec_cols"), REC_COLS_DEFAULT_))
+        # ★ v2.9.22：每页记住的宽度（切页时按它调，手动拉过就更新）
+        self.page_widths: Dict[str, int] = {}
+        # ★ v2.9.28：统计页「日期 / 范围」两个下拉的选择（选过就记住，重启 / 切页都保持）
+        self.stats_day: str = str(self._global_settings.get("stats_day") or "")
+        self.stats_client: str = str(self._global_settings.get("stats_client") or "")
+        # ★ v2.9.27：「同一手牌只留一条」开关（默认开）。桌面端与 Web 端共用一个
+        #   统计库，所以这一个开关两端同时生效 —— 关掉就退回「算一次记一条」。
+        self.same_hand_merge: bool = bool(
+            self._global_settings.get("same_hand_merge", True))
         self._settings_dlg = None                  # 设置窗口（打开时才有）
         self._stats_dlg = None                     # ★ v2.9.7 统计窗口（打开时才有；改列时要跟着刷新）
         self._detail_dlg = None                    # ★ v2.9.10 逐手明细窗口（打开时才有；改列时跟着刷新）
@@ -1367,6 +1584,13 @@ class MahjongFanWindow(QMainWindow):
             except Exception as _exc:      # noqa: BLE001
                 self.stats = None
                 sys.stderr.write("[stats] 统计库初始化失败：%r\n" % (_exc,))
+        # ★ v2.9.27：把「同一手牌只留一条」的开关交给统计库（3 分钟窗口）
+        if self.stats is not None:
+            try:
+                self.stats.set_merge_policy(self.same_hand_merge,
+                                            SAME_HAND_UPSERT_MS_)
+            except Exception as _exc:      # noqa: BLE001
+                sys.stderr.write("[stats] 设置合并策略失败：%r\n" % (_exc,))
 
         self._build_ui()
         self._build_menu()
@@ -1385,12 +1609,15 @@ class MahjongFanWindow(QMainWindow):
         root.setSpacing(0)
 
         self.stack = QStackedWidget()
-        self.stack.addWidget(self._build_calc_page())
-        self.stack.addWidget(self._build_fan_page())
-        self.stack.addWidget(self._build_help_page())
+        self.stack.addWidget(self._build_calc_page())      # 0 算番
+        self.stack.addWidget(self._build_stats_page())     # 1 统计（★ v2.9.19）
+        self.stack.addWidget(self._build_fan_page())       # 2 番表
+        self.stack.addWidget(self._build_help_page())      # 3 用法
         root.addWidget(self.stack, 1)
+        # ★ v2.9.19：切到「统计」页才轮询数据库，别在算番页空转查库
+        self.stack.currentChanged.connect(self._on_page_changed)
 
-        # 底部导航（算番 / 番表 / 用法）
+        # 底部导航（算番 / 统计 / 番表 / 用法）—— ★ v2.9.19 插入「统计」
         nav = QFrame()
         nav.setFrameShape(QFrame.NoFrame)
         nav.setStyleSheet("background:#f4f6fa;border-top:1px solid #d8dee8;")
@@ -1400,6 +1627,7 @@ class MahjongFanWindow(QMainWindow):
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
         for idx, (icon, text) in enumerate((("\U0001F9EE", "算番"),
+                                            ("\U0001F4CA", "统计"),
                                             ("\U0001F4D6", "番表"),
                                             ("\u2753", "用法"))):
             btn = QPushButton("%s %s" % (icon, text))
@@ -1735,6 +1963,812 @@ class MahjongFanWindow(QMainWindow):
                       "再点一次「暗杠」＝取消",
         }.get(key, "")
 
+    # ---- 统计页（★ v2.9.19）
+    def _build_stats_page(self) -> QWidget:
+        """「统计」页：局域网里所有人（含本机桌面端）的算番情况，近实时。
+
+        三块：
+          · 工具栏 —— 日期范围 / 只看某一端 / 手动刷新 / 自动刷新开关
+          · 汇总条 —— 手数、番数、人数，以及 Web 端占了多少
+          · 两张表 —— 上「按人聚合」、下「最近逐条记录」（选中后可编辑 / 删除）
+
+        ★ 实时怎么做到：QTimer 每 2 秒查一次 `StatsDB.signal()`
+          （一条 `SELECT MAX(id), COUNT(*)`，走主键索引，亚毫秒级），
+          只有信号变了才重建表格 —— 没人算番时几乎不耗资源。
+          查询本身是毫秒级的本地 SQLite，不放工作线程（放了反而更慢更复杂）；
+          真正耗时的渲染也只在有变化时才做。
+        """
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(12, 10, 12, 10)
+        lay.setSpacing(6)
+
+        top = QHBoxLayout()
+        top.setSpacing(6)
+        top.addWidget(QLabel("日期"))
+        self.cmb_stats_day = QComboBox()
+        self.cmb_stats_day.setMinimumWidth(150)
+        # ★ v2.9.28：选过就记住（刷新一起走 _stats_day_changed）
+        self.cmb_stats_day.currentIndexChanged.connect(self._stats_day_changed)
+        # ★ v2.9.26：右键日期 → 删掉这一天的记录（记错了整天重来）
+        self.cmb_stats_day.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.cmb_stats_day.customContextMenuRequested.connect(
+            self._stats_day_menu)
+        top.addWidget(self.cmb_stats_day)
+        top.addWidget(QLabel("范围"))
+        self.cmb_stats_client = QComboBox()
+        self.cmb_stats_client.addItem("全部端", None)
+        self.cmb_stats_client.addItem("只看 Web 端", "web")
+        self.cmb_stats_client.addItem("只看桌面端", "desktop")
+        # ★ v2.9.28：选过就记住
+        self.cmb_stats_client.currentIndexChanged.connect(
+            self._stats_client_changed)
+        top.addWidget(self.cmb_stats_client)
+        btn_now = QPushButton("刷新")
+        btn_now.clicked.connect(lambda: self._stats_refresh(force=True))
+        top.addWidget(btn_now)
+        # ★ v2.9.26：历史重复清理（老记录没有手牌指纹，只能按时间窗归组去重）
+        self.btn_stats_dedupe = QPushButton("清理重复…")
+        self.btn_stats_dedupe.setToolTip(
+            "把以前同一次算番折腾出来的多条记录合成一条（先预览要删哪些，再决定删）")
+        self.btn_stats_dedupe.clicked.connect(self._stats_dedupe_history)
+        top.addWidget(self.btn_stats_dedupe)
+        # ★ v2.9.22：两张表显示哪几列，直接在这里勾（勾完立刻生效 + 自动保存）
+        self.btn_stats_cols = QPushButton()
+        self.btn_stats_cols.setToolTip(
+            "勾选「按人聚合」表显示哪几列（勾完立刻生效并自动保存）")
+        self.btn_stats_rec_cols = QPushButton()
+        self.btn_stats_rec_cols.setToolTip(
+            "勾选「最近记录」表显示哪几列（勾完立刻生效并自动保存）")
+        self._menu_people = QMenu(self.btn_stats_cols)
+        self._menu_people.aboutToShow.connect(
+            lambda: self._stats_fill_col_menu("people"))
+        self.btn_stats_cols.setMenu(self._menu_people)
+        self._menu_recs = QMenu(self.btn_stats_rec_cols)
+        self._menu_recs.aboutToShow.connect(
+            lambda: self._stats_fill_col_menu("recs"))
+        self.btn_stats_rec_cols.setMenu(self._menu_recs)
+        top.addWidget(self.btn_stats_cols)
+        top.addWidget(self.btn_stats_rec_cols)
+        # ★ v2.9.23：逐手明细表显示哪几列，也在这里勾（同一套入口，勾完立刻生效 + 自动保存）
+        self.btn_stats_detail_cols = QPushButton()
+        self.btn_stats_detail_cols.setToolTip(
+            "勾选「逐手明细」窗口显示哪几列（勾完立刻生效并自动保存；"
+            "手机 / 平板也按这套列显示）")
+        self._menu_detail = QMenu(self.btn_stats_detail_cols)
+        self._menu_detail.aboutToShow.connect(
+            lambda: self._stats_fill_col_menu("detail"))
+        self.btn_stats_detail_cols.setMenu(self._menu_detail)
+        top.addWidget(self.btn_stats_detail_cols)
+        self.cb_stats_live = QCheckBox("实时刷新")
+        self.cb_stats_live.setChecked(True)
+        self.cb_stats_live.setToolTip("每 2 秒看一眼数据库有没有新记录，有才重建表格")
+        self.cb_stats_live.toggled.connect(self._stats_live_toggled)
+        top.addWidget(self.cb_stats_live)
+        top.addStretch(1)
+        lay.addLayout(top)
+
+        self.lbl_stats_sum = QLabel("统计库不可用")
+        self.lbl_stats_sum.setStyleSheet("font-weight:bold;padding:2px 0;")
+        lay.addWidget(self.lbl_stats_sum)
+        self.lbl_stats_fans = QLabel("")
+        self.lbl_stats_fans.setStyleSheet("color:#666;")
+        self.lbl_stats_fans.setWordWrap(True)
+        lay.addWidget(self.lbl_stats_fans)
+
+        self.lbl_stats_people = QLabel("按人聚合")
+        self.lbl_stats_people.setStyleSheet("color:#5b6472;font-weight:bold;")
+        lay.addWidget(self.lbl_stats_people)
+        # ★ v2.9.22：列由 self.stats_cols 决定（默认仍是原来那 8 列 / 13 列里挑）
+        self.tbl_stats_live = QTableWidget(0, max(1, len(self.stats_cols)))
+        self.tbl_stats_live.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.tbl_stats_live.setSelectionBehavior(QTableWidget.SelectRows)
+        self.tbl_stats_live.setAlternatingRowColors(True)
+        self.tbl_stats_live.doubleClicked.connect(
+            lambda _i: self._stats_open_detail())
+        # ★ v2.9.28：右键按人聚合 → 看明细 / 复制 IP·昵称 / 删这个人的记录
+        self.tbl_stats_live.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tbl_stats_live.customContextMenuRequested.connect(
+            self._stats_people_menu)
+        lay.addWidget(self.tbl_stats_live, 3)
+
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        lbl_rec = QLabel("最近记录（选中后可用下面按钮改 / 删）")
+        lbl_rec.setStyleSheet("color:#5b6472;font-weight:bold;")
+        row.addWidget(lbl_rec)
+        row.addStretch(1)
+        self.btn_stats_edit = QPushButton("编辑选中…")
+        self.btn_stats_edit.setToolTip("改这一手的番数 / 起番 / 达标 / 番种（原始时间与 IP 不动）")
+        self.btn_stats_edit.clicked.connect(self._stats_edit_selected)
+        row.addWidget(self.btn_stats_edit)
+        self.btn_stats_del = QPushButton("删除选中…")
+        self.btn_stats_del.setToolTip("删掉这一条记录（不可撤销）")
+        self.btn_stats_del.clicked.connect(self._stats_delete_selected)
+        row.addWidget(self.btn_stats_del)
+        self.btn_stats_del_user = QPushButton("删除此人全部…")
+        self.btn_stats_del_user.setToolTip(
+            "把当前日期范围内这个人（user_key）的记录全删掉；昵称也一并释放")
+        self.btn_stats_del_user.clicked.connect(self._stats_delete_user)
+        row.addWidget(self.btn_stats_del_user)
+        lay.addLayout(row)
+
+        # ★ v2.9.22：列由 self.rec_cols 决定（默认＝原来写死那 8 列）
+        self.tbl_stats_rec = QTableWidget(0, max(1, len(self.rec_cols)))
+        self.tbl_stats_rec.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.tbl_stats_rec.setSelectionBehavior(QTableWidget.SelectRows)
+        self.tbl_stats_rec.setAlternatingRowColors(True)
+        self.tbl_stats_rec.doubleClicked.connect(
+            lambda _i: self._stats_edit_selected())
+        # ★ v2.9.26：右键记录 → 删这一条 / 删这一天（不用先去上面找按钮）
+        self.tbl_stats_rec.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tbl_stats_rec.customContextMenuRequested.connect(
+            self._stats_rec_menu)
+        lay.addWidget(self.tbl_stats_rec, 4)
+
+        self.lbl_stats_tip = QLabel(
+            "数据就在本机 mahjong_stats.db；手机 / 平板打开 Web 版算完一手，"
+            "这里 2 秒内会自己冒出来。编辑只改判定（番数 / 起番 / 达标 / 番种），"
+            "时间、用户、IP、UA 属事实不让改。\n"
+            "两张表想看哪几列，直接点上面的「按人表列 / 记录表列」勾选 —— 勾完立刻生效并自动保存；"
+            "「按人表列」同时也是手机 / 平板（Web 版）显示的列。\n"
+            "★ 右键有快捷操作：在「最近记录」上右键 → 删这一条 / 删这一天的全部记录；"
+            "在左上角「日期」下拉上右键 → 删那一天的记录。早期版本同一次算番会重复记好几条，"
+            "点「清理重复…」可以先预览、再一次合并。")
+        self.lbl_stats_tip.setStyleSheet("color:#666;font-size:11px;")
+        self.lbl_stats_tip.setWordWrap(True)
+        lay.addWidget(self.lbl_stats_tip)
+
+        # 轮询状态：上一次的信号与范围（用来判断「真的变了没」）
+        self._stats_sig: Optional[Tuple[int, int]] = None
+        self._stats_scope: Optional[Tuple] = None
+        self._stats_rows: List[Dict] = []
+        self._stats_days: List[str] = []
+        self.stats_timer = QTimer(self)
+        self.stats_timer.setInterval(2000)
+        self.stats_timer.timeout.connect(self._stats_refresh)
+        self._stats_rebuild_headers()
+        self._stats_init_days()
+        self._stats_refresh(force=True)
+        return page
+
+    def _stats_init_days(self) -> None:
+        """日期下拉：首项「全部日期」，再按库里实际有的日期倒序排"""
+        if getattr(self, "cmb_stats_day", None) is None:
+            return
+        db = self.stats
+        days = []
+        if db is not None:
+            try:
+                days = list(db.list_days())
+            except Exception as _exc:      # noqa: BLE001
+                sys.stderr.write("[stats] 读取日期失败：%r\n" % (_exc,))
+        self._stats_days = days
+        box = self.cmb_stats_day
+        cur = box.currentData()
+        box.blockSignals(True)
+        try:
+            box.clear()
+            box.addItem("全部日期", None)
+            for d in days:
+                box.addItem(d, d)
+            # ★ v2.9.28：优先保住当前选择；启动时当前还是「全部日期」，
+            #   这时用记下来的 self.stats_day 还原（那天已经被删光就自然落回全部日期）
+            want = cur or (self.stats_day or None)
+            if want:
+                pos = self._combo_pos_by_data(box, want)
+                if pos >= 0:
+                    box.setCurrentIndex(pos)
+                elif not cur:
+                    self.stats_day = ""
+        finally:
+            box.blockSignals(False)
+
+    def _stats_people_cell(self, key: str, r: dict) -> str:
+        """★ v2.9.22：「按人聚合」表某一格的值（列 key 与 mahjong_api.STATS_COL_ITEMS 一致）"""
+        if key == "user":
+            return self._stats_user_text(r)
+        if key == "ctype":
+            return "桌面" if r.get("client_type") == "desktop" else "Web"
+        if key in ("nick", "os", "browser", "dev"):
+            return _device_cell(key, r)
+        if key == "ip":
+            return str(r.get("ip") or "-")
+        if key == "ua":
+            return _ua_brief(str(r.get("ua") or ""))
+        if key == "fan":
+            return str(r.get("total_fan", 0))
+        if key == "cnt":
+            return str(r.get("cnt", 0))
+        if key == "reach":
+            return str(r.get("reach_cnt", 0))
+        if key == "last":
+            ts = int(r.get("last_ts") or 0)
+            if ts <= 0:
+                return "-"
+            return time.strftime("%m-%d %H:%M", time.localtime(ts / 1000.0))
+        if key == "fans":
+            return _fans_brief(r.get("fans"))
+        return "-"
+
+    def _stats_rec_cell(self, key: str, r: dict) -> str:
+        """★ v2.9.22：「最近记录」表某一格的值（列 key 与 mahjong_api.REC_COL_ITEMS 一致）"""
+        if key == "time":
+            ts = int(r.get("ts_ms") or 0)
+            return time.strftime("%m-%d %H:%M:%S", time.localtime(ts / 1000.0))
+        if key == "user":
+            return self._stats_user_text(r)
+        if key == "ctype":
+            return "桌面" if r.get("client_type") == "desktop" else "Web"
+        if key in ("nick", "os", "browser", "dev"):
+            return _device_cell(key, r)
+        if key == "ip":
+            return str(r.get("ip") or "-")
+        if key == "ua":
+            return _ua_brief(str(r.get("ua") or ""))
+        if key == "fan":
+            return str(r.get("total_fan", 0))
+        if key == "base":
+            return str(r.get("base", 0))
+        if key == "reach":
+            return "是" if r.get("reach") else "否"
+        if key == "fans_n":
+            return str(r.get("fans_n", 0))
+        if key == "fans":
+            return _fans_brief(r.get("fans"))
+        return "-"
+
+    def _stats_rebuild_headers(self) -> None:
+        """★ v2.9.22：按 self.stats_cols / self.rec_cols 重建两张表的列数与表头"""
+        labels_p = dict(STATS_COL_ITEMS_)
+        labels_r = dict(REC_COL_ITEMS_)
+        tbl = getattr(self, "tbl_stats_live", None)
+        if tbl is not None:
+            self.stats_cols = list(stats_cols_normalize_(
+                self.stats_cols, STATS_COLS_DESKTOP_DEFAULT_))
+            tbl.setColumnCount(max(1, len(self.stats_cols)))
+            tbl.setHorizontalHeaderLabels([labels_p.get(k, k) for k in self.stats_cols])
+        rec = getattr(self, "tbl_stats_rec", None)
+        if rec is not None:
+            self.rec_cols = list(rec_cols_normalize_(self.rec_cols, REC_COLS_DEFAULT_))
+            rec.setColumnCount(max(1, len(self.rec_cols)))
+            rec.setHorizontalHeaderLabels([labels_r.get(k, k) for k in self.rec_cols])
+        self._stats_sync_col_buttons()
+
+    def _stats_sync_col_buttons(self) -> None:
+        """按钮文字带上当前列数，一眼看得出这张表现在几列"""
+        b = getattr(self, "btn_stats_cols", None)
+        if b is not None:
+            b.setText("按人表列 ▾（%d）" % len(self.stats_cols))
+        b2 = getattr(self, "btn_stats_rec_cols", None)
+        if b2 is not None:
+            b2.setText("记录表列 ▾（%d）" % len(self.rec_cols))
+        b3 = getattr(self, "btn_stats_detail_cols", None)     # ★ v2.9.23
+        if b3 is not None:
+            b3.setText("明细表列 ▾（%d）" % len(self.detail_cols))
+
+    def _stats_fill_col_menu(self, which: str) -> None:
+        """★ v2.9.22：点开「表列」按钮时现填菜单（勾选状态永远跟当前设置一致）"""
+        if which == "people":
+            menu, items = self._menu_people, STATS_COL_ITEMS_
+            cur = set(self.stats_cols)
+            toggle = self._stats_toggle_people_col
+        elif which == "detail":                      # ★ v2.9.23 逐手明细表
+            menu, items = self._menu_detail, DETAIL_COL_ITEMS_
+            cur = set(self.detail_cols)
+            toggle = self._stats_toggle_detail_col
+        else:
+            menu, items = self._menu_recs, REC_COL_ITEMS_
+            cur = set(self.rec_cols)
+            toggle = self._stats_toggle_rec_col
+        menu.clear()
+        for key, label in items:
+            act = menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(key in cur)
+            act.triggered.connect(lambda _c=False, _k=key, _t=toggle: _t(_k))
+        menu.addSeparator()
+        act_all = menu.addAction("全选")
+        act_all.triggered.connect(
+            lambda _c=False: self._stats_set_cols_for(which, [k for k, _ in items]))
+        act_def = menu.addAction("恢复默认")
+        act_def.triggered.connect(
+            lambda _c=False: self._stats_set_cols_for(which, None))
+        # 「手机常用」：一键回到手机上看得清的那几列（★ v2.9.23 明细表也有）
+        _web_def = {"people": STATS_COLS_WEB_DEFAULT_,
+                    "detail": DETAIL_COLS_WEB_DEFAULT_}
+        _wd = _web_def.get(which)
+        if _wd:
+            act_web = menu.addAction("手机常用（%d 列）" % len(_wd))
+            act_web.triggered.connect(
+                lambda _c=False, _w=which, _keys=list(_wd):
+                self._stats_set_cols_for(_w, _keys))
+
+    def _stats_set_cols_for(self, which: str, cols) -> None:
+        """★ v2.9.22：统计页里改完列 → 立刻重建表头 + 重填 + 落盘（cols=None 表示回默认）
+
+        ★ v2.9.23：多了 `"detail"`（逐手明细表）—— 与另外两张表同一套入口，同样
+        「归一化 + 同步 Web + 落盘」；明细窗口开着的话它也一起重建表头。
+        """
+        if which == "people":
+            self._set_stats_cols(                    # 归一化 + 同步 Web + 落盘 + 重建表头
+                list(STATS_COLS_DESKTOP_DEFAULT_) if cols is None else cols)
+        elif which == "detail":
+            self._set_detail_cols(                   # 同上，明细表
+                list(DETAIL_COLS_DESKTOP_DEFAULT_) if cols is None else cols)
+            b3 = getattr(self, "btn_stats_detail_cols", None)
+            if b3 is not None:
+                b3.setText("明细表列 ▾（%d）" % len(self.detail_cols))
+        else:
+            self.rec_cols = list(rec_cols_normalize_(
+                list(REC_COLS_DEFAULT_) if cols is None else cols,
+                REC_COLS_DEFAULT_))
+            self._stats_rebuild_headers()
+            self._stats_refresh(force=True)
+            self._autosave_settings()
+
+    def _stats_toggle_people_col(self, key: str) -> None:
+        cur = list(self.stats_cols)
+        if key in cur:
+            if len(cur) <= 1:
+                return                                # 至少留一列，否则表就空了
+            cur = [k for k in cur if k != key]
+        else:
+            want = set(cur) | {key}
+            cur = [k for k, _ in STATS_COL_ITEMS_ if k in want]
+        self._stats_set_cols_for("people", cur)
+
+    def _stats_toggle_rec_col(self, key: str) -> None:
+        cur = list(self.rec_cols)
+        if key in cur:
+            if len(cur) <= 1:
+                return
+            cur = [k for k in cur if k != key]
+        else:
+            want = set(cur) | {key}
+            cur = [k for k, _ in REC_COL_ITEMS_ if k in want]
+        self._stats_set_cols_for("recs", cur)
+
+    def _stats_toggle_detail_col(self, key: str) -> None:
+        """★ v2.9.23：逐手明细表增删一列（至少留一列；加列按定义顺序重排）"""
+        cur = list(self.detail_cols)
+        if key in cur:
+            if len(cur) <= 1:
+                return                                # 至少留一列，否则表就空了
+            cur = [k for k in cur if k != key]
+        else:
+            want = set(cur) | {key}
+            cur = [k for k, _ in DETAIL_COL_ITEMS_ if k in want]
+        self._stats_set_cols_for("detail", cur)
+
+    # ---- ★ v2.9.28：「日期 / 范围」选过就记住（重启、切页都保持上次的选择）
+    def _stats_day_changed(self, _i: int = -1) -> None:
+        """日期下拉改选 → 记住它，再按新范围刷新"""
+        box = getattr(self, "cmb_stats_day", None)
+        if box is not None:
+            self.stats_day = str(box.currentData() or "")
+        self._autosave_settings()
+        self._stats_refresh(force=True)
+
+    def _stats_client_changed(self, _i: int = -1) -> None:
+        """范围下拉改选 → 记住它，再按新范围刷新"""
+        box = getattr(self, "cmb_stats_client", None)
+        if box is not None:
+            self.stats_client = str(box.currentData() or "")
+        self._autosave_settings()
+        self._stats_refresh(force=True)
+
+    @staticmethod
+    def _combo_pos_by_data(box, data) -> int:
+        """在下拉里找哪个项的 data 等于 data（找不到就 -1）
+
+        为什么不用 findData：全部日期 / 全部端 的 data 是 None，
+        跨版本 Qt 里 findData(None) 的行为不好指望，干脆自己比。
+        """
+        if box is None:
+            return -1
+        for i in range(box.count()):
+            if box.itemData(i) == data:
+                return i
+        return -1
+
+    def _stats_restore_filters(self) -> None:
+        """★ v2.9.28：启动时把上次选中的「日期 / 范围」还原到下拉上（不触发刷新）"""
+        box = getattr(self, "cmb_stats_day", None)
+        if box is not None:
+            box.blockSignals(True)
+            try:
+                pos = self._combo_pos_by_data(box, self.stats_day or None)
+                box.setCurrentIndex(pos if pos >= 0 else 0)
+                if pos < 0:
+                    self.stats_day = ""
+            finally:
+                box.blockSignals(False)
+        cbox = getattr(self, "cmb_stats_client", None)
+        if cbox is not None:
+            cbox.blockSignals(True)
+            try:
+                pos = self._combo_pos_by_data(cbox, self.stats_client or None)
+                cbox.setCurrentIndex(pos if pos >= 0 else 0)
+                if pos < 0:
+                    self.stats_client = ""
+            finally:
+                cbox.blockSignals(False)
+
+    # ---- ★ v2.9.28：右键「按人聚合」→ 看明细 / 复制 / 删这个人的记录
+    def _stats_people_menu(self, pos) -> None:
+        """按人聚合表的右键菜单（与「最近记录」那套对齐，只是对象是「一个人」）"""
+        tbl = getattr(self, "tbl_stats_live", None)
+        if tbl is None or self.stats is None:
+            return
+        idx = tbl.indexAt(pos)
+        if idx.isValid():
+            tbl.setCurrentCell(idx.row(), idx.column())
+        row_i = tbl.currentRow()
+        try:
+            rows = self.stats.aggregate(self.cmb_stats_day.currentData())
+        except Exception:                  # noqa: BLE001
+            rows = []
+        r = rows[row_i] if 0 <= row_i < len(rows) else None
+        menu = QMenu(self)
+        if r is None:
+            act0 = menu.addAction("看逐手明细…（先选中一个人的那一行）")
+            act0.setEnabled(False)
+        else:
+            act = menu.addAction("看逐手明细…")
+            act.triggered.connect(self._stats_open_detail)
+            menu.addSeparator()
+            ip_txt = str(r.get("ip") or "")
+            nick_txt = _device_cell("nick", r)
+            if not nick_txt or nick_txt == "-":
+                nick_txt = self._stats_user_text(r)
+            act_ip = menu.addAction("复制 IP" + (("（%s）" % ip_txt) if ip_txt else ""))
+            act_ip.setEnabled(bool(ip_txt))
+            act_ip.triggered.connect(
+                lambda _c=False, _v=ip_txt: self._copy_text(_v, "IP"))
+            act_nick = menu.addAction("复制昵称" + (("（%s）" % nick_txt) if nick_txt else ""))
+            act_nick.triggered.connect(
+                lambda _c=False, _v=nick_txt: self._copy_text(_v, "昵称"))
+            menu.addSeparator()
+            act_del = menu.addAction("删除此人在当前范围的全部记录…")
+            act_del.triggered.connect(self._stats_delete_user)
+            day = str(r.get("day") or "") or str(self.cmb_stats_day.currentData() or "")
+            if day:
+                act_day = menu.addAction("删除 %s 这一天的全部记录…" % day)
+                act_day.triggered.connect(
+                    lambda _c=False, _d=day: self._stats_delete_day(_d))
+        menu.addSeparator()
+        act3 = menu.addAction("清理历史重复…")
+        act3.triggered.connect(self._stats_dedupe_history)
+        menu.exec(tbl.mapToGlobal(pos))
+
+    def _copy_text(self, text: str, what: str = "内容") -> None:
+        """★ v2.9.28：把一段文字塞进剪贴板，并在状态栏说一句（免得不知道有没有复制上）"""
+        txt = str(text or "")
+        if not txt:
+            self.statusBar().showMessage("没有可复制的%s。" % what, 3000)
+            return
+        try:
+            QApplication.clipboard().setText(txt)
+        except Exception as exc:           # noqa: BLE001
+            sys.stderr.write("[ui] 复制失败：%r\n" % (exc,))
+            self.statusBar().showMessage("复制失败（看 stderr 日志）。", 3000)
+            return
+        self.statusBar().showMessage("已复制%s：%s" % (what, txt[:40]), 3000)
+
+    def _stats_live_toggled(self, on: bool) -> None:
+        """实时开关：只在「统计」页可见时才真的开定时器（省电、省查询）"""
+        t = getattr(self, "stats_timer", None)
+        if t is None:
+            return
+        if on and self.stack.currentIndex() == 1:
+            t.start()
+            self._stats_refresh(force=True)
+        else:
+            t.stop()
+
+    def _on_page_changed(self, idx: int) -> None:
+        """★ v2.9.19：页面切换钩子 —— 站到「统计」页才轮询，离开就停
+
+        ★ v2.9.22：顺便把窗口宽度调成这一页合适的样子（见 _apply_page_width）
+        """
+        self._apply_page_width(idx)
+        t = getattr(self, "stats_timer", None)
+        if t is None:
+            return
+        live = bool(getattr(self, "cb_stats_live", None) is not None
+                    and self.cb_stats_live.isChecked())
+        if idx == 1 and live:
+            self._stats_refresh(force=True)
+            t.start()
+        else:
+            t.stop()
+
+    def _stats_refresh(self, force: bool = False) -> None:
+        """刷新「统计」页（force=True 无视变化信号，强制重建）"""
+        tbl = getattr(self, "tbl_stats_live", None)
+        if tbl is None:
+            return
+        db = self.stats
+        if db is None:
+            self.lbl_stats_sum.setText("统计库不可用（mahjong_stats 导入失败）")
+            self.lbl_stats_fans.setText(repr(STATS_IMPORT_ERROR))
+            tbl.setRowCount(0)
+            self.tbl_stats_rec.setRowCount(0)
+            return
+        day = self.cmb_stats_day.currentData()
+        ctype = self.cmb_stats_client.currentData()
+        sig = db.signal()
+        scope = (day, ctype)
+        if (not force) and sig == self._stats_sig and scope == self._stats_scope:
+            return                              # 没有新记录、筛选也没变：什么都不做
+        self._stats_sig = sig
+        self._stats_scope = scope
+        if sig[1] < 0:
+            self.lbl_stats_sum.setText("读不到统计库（见 stderr 日志）")
+            return
+
+        # ① 汇总
+        try:
+            sum_ = db.total_summary(day)
+            cli = db.client_summary(day)
+        except Exception as _exc:          # noqa: BLE001
+            sys.stderr.write("[stats] 汇总失败：%r\n" % (_exc,))
+            sum_, cli = {"hands": 0, "fan": 0, "users": 0}, {}
+        self.lbl_stats_sum.setText(
+            "共 %d 手 / %d 番 / %d 人　｜　其中 Web 端 %d 手（%d 番）、桌面端 %d 手（%d 番）"
+            % (int(sum_.get("hands", 0)), int(sum_.get("fan", 0)),
+               int(sum_.get("users", 0)),
+               int(cli.get("web_hands", 0)), int(cli.get("web_fan", 0)),
+               int(cli.get("desktop_hands", 0)), int(cli.get("desktop_fan", 0))))
+        fans_txt = str(sum_.get("fans_txt") or "")
+        self.lbl_stats_fans.setText("番种：" + (fans_txt if fans_txt else "（还没有记录到番种）"))
+
+        # ② 按人聚合（★ v2.9.20：静默填表，见 _fill_table_quiet 的说明）
+        try:
+            rows = db.aggregate(day)
+        except Exception as _exc:          # noqa: BLE001
+            sys.stderr.write("[stats] 读聚合失败：%r\n" % (_exc,))
+            rows = []
+
+        keys_p = list(self.stats_cols)
+
+        def fill_people() -> None:
+            tbl.setRowCount(len(rows))
+            for i, r in enumerate(rows):
+                cells = [self._stats_people_cell(k, r) for k in keys_p]
+                for j, txt in enumerate(cells):
+                    it = QTableWidgetItem(txt)
+                    if keys_p[j] in ("fan", "cnt", "reach"):
+                        it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    it.setToolTip(str(r.get("user_key") or ""))
+                    tbl.setItem(i, j, it)
+
+        def modes_people() -> None:
+            _apply_col_modes(tbl, keys_p)
+
+        fill_table_quiet(tbl, fill_people, modes_people)
+
+        # ③ 最近逐条记录（带 id，编辑 / 删除要用）
+        try:
+            recs = db.recent_rows(day, ctype, 300)
+        except Exception as _exc:          # noqa: BLE001
+            sys.stderr.write("[stats] 读最近记录失败：%r\n" % (_exc,))
+            recs = []
+        self._stats_rows = recs
+        rec = self.tbl_stats_rec
+
+        keys_r = list(self.rec_cols)
+
+        def fill_records() -> None:
+            rec.setRowCount(len(recs))
+            for i, r in enumerate(recs):
+                cells = [self._stats_rec_cell(k, r) for k in keys_r]
+                for j, txt in enumerate(cells):
+                    it = QTableWidgetItem(txt)
+                    if keys_r[j] in ("fan", "base", "fans_n"):
+                        it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    it.setToolTip("#%s　%s" % (r.get("id"),
+                                              str(r.get("fans") or "（无番种）")))
+                    rec.setItem(i, j, it)
+
+        def modes_records() -> None:
+            _apply_col_modes(rec, keys_r)
+
+        fill_table_quiet(rec, fill_records, modes_records)
+
+    @staticmethod
+    def _stats_user_text(r: dict) -> str:
+        """聚合表「用户」列：优先 UUID（认人），没有就用 user_key"""
+        return str(r.get("uuid") or r.get("user_key") or "?")
+
+    def _stats_selected_row(self) -> Optional[dict]:
+        """最近记录表当前选中的那一条（没有选中返回 None 并提示）"""
+        tbl = getattr(self, "tbl_stats_rec", None)
+        if tbl is None:
+            return None
+        idx = tbl.currentRow()
+        if idx < 0 or idx >= len(self._stats_rows):
+            QMessageBox.information(self, "统计",
+                                    "先在下面「最近记录」里选中一行。")
+            return None
+        return self._stats_rows[idx]
+
+    def _stats_edit_selected(self) -> None:
+        """编辑选中那条记录的判定字段（★ v2.9.19 服务器端维护）"""
+        r = self._stats_selected_row()
+        if r is None:
+            return
+        if self.stats is None:
+            return
+        dlg = StatsEditDialog(self, r)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        ok = self.stats.update_row(int(r.get("id") or 0), **dlg.values())
+        if not ok:
+            QMessageBox.warning(self, "统计", "没改成（记录可能已被别处删掉）。")
+        self._stats_refresh(force=True)
+        self._stats_init_days()
+
+    def _stats_delete_selected(self) -> None:
+        """删除选中那条记录（有确认，不可撤销）"""
+        r = self._stats_selected_row()
+        if r is None:
+            return
+        if self.stats is None:
+            return
+        ts = int(r.get("ts_ms") or 0)
+        when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts / 1000.0))
+        ans = QMessageBox.question(
+            self, "删除记录",
+            "确定删掉这一条？\n\n%s　%s　%d 番\n\n删了就没了，不能撤销。"
+            % (when, _device_cell("nick", r), int(r.get("total_fan") or 0)),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if ans != QMessageBox.Yes:
+            return
+        ok = self.stats.delete_row(int(r.get("id") or 0))
+        if not ok:
+            QMessageBox.warning(self, "统计", "没删掉（记录可能已被别处删掉）。")
+        self._stats_refresh(force=True)
+        self._stats_init_days()
+
+    def _stats_delete_user(self) -> None:
+        """把某个人在当前日期范围内的记录全删掉（昵称一并释放）"""
+        tbl = getattr(self, "tbl_stats_live", None)
+        if tbl is None or self.stats is None:
+            return
+        idx = tbl.currentRow()
+        try:
+            rows = self.stats.aggregate(self.cmb_stats_day.currentData())
+        except Exception:                  # noqa: BLE001
+            rows = []
+        if idx < 0 or idx >= len(rows):
+            QMessageBox.information(self, "统计",
+                                    "先在上面「按人聚合」里选中一个人（点它那一行）。")
+            return
+        key = str(rows[idx].get("user_key") or "")
+        if not key:
+            return
+        day = self.cmb_stats_day.currentData()
+        who = "%s（%s）" % (_device_cell("nick", rows[idx]), self._stats_user_text(rows[idx]))
+        scope = ("只在 %s 这一天" % day) if day else "全部日期"
+        ans = QMessageBox.question(
+            self, "删除该用户的记录",
+            "确定把 %s 在 %s 的算番记录全部删掉？\n\n这个人的昵称也会一起释放，"
+            "不能撤销。" % (who, scope),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if ans != QMessageBox.Yes:
+            return
+        n = self.stats.delete_user(key, day)
+        if n:
+            QMessageBox.information(self, "统计", "已删除 %d 条记录。" % n)
+        else:
+            QMessageBox.information(self, "统计", "没有删到记录。")
+        self._stats_refresh(force=True)
+        self._stats_init_days()
+
+    # ---- ★ v2.9.26：右键菜单（删某天 / 删某条）与历史重复清理
+    def _stats_day_menu(self, pos) -> None:
+        """日期下拉右键：删掉这一天的全部记录"""
+        box = getattr(self, "cmb_stats_day", None)
+        if box is None or self.stats is None:
+            return
+        day = box.currentData()
+        menu = QMenu(self)
+        act_all = menu.addAction("清理历史重复（全部日期）…")
+        act_all.triggered.connect(self._stats_dedupe_history)
+        menu.addSeparator()
+        if not day:
+            act = menu.addAction("删除某一天…（先在上面选中那一天）")
+            act.setEnabled(False)
+        else:
+            act = menu.addAction("删除 %s 的全部记录…" % day)
+            act.triggered.connect(lambda _c=False, _d=day: self._stats_delete_day(_d))
+        menu.exec(box.mapToGlobal(pos))
+
+    def _stats_delete_day(self, day: str) -> None:
+        """删掉某一天的全部记录（有确认，不可撤销；昵称表不动）"""
+        if self.stats is None or not day:
+            return
+        ans = QMessageBox.question(
+            self, "删除这一天的记录",
+            "确定把 %s 这一天的算番记录全部删掉？\n\n"
+            "这个操作不可撤销，昵称不会释放（别的日子还留着这个名字）。" % day,
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if ans != QMessageBox.Yes:
+            return
+        n = self.stats.delete_day(day)
+        if n:
+            QMessageBox.information(self, "统计", "已删除 %s 的 %d 条记录。" % (day, n))
+        else:
+            QMessageBox.information(self, "统计", "%s 没有记录可删。" % day)
+        self._stats_refresh(force=True)
+        self._stats_init_days()
+
+    def _stats_rec_menu(self, pos) -> None:
+        """最近记录表右键：删这一条 / 删这一天 / 清历史重复"""
+        tbl = getattr(self, "tbl_stats_rec", None)
+        if tbl is None or self.stats is None:
+            return
+        idx = tbl.indexAt(pos)
+        if idx.isValid():
+            tbl.setCurrentCell(idx.row(), idx.column())
+        r = None
+        row_i = tbl.currentRow()
+        if 0 <= row_i < len(self._stats_rows):
+            r = self._stats_rows[row_i]
+        menu = QMenu(self)
+        if r is None:
+            act0 = menu.addAction("删除这一条…（先选中一行）")
+            act0.setEnabled(False)
+        else:
+            act = menu.addAction("删除这一条…")
+            act.triggered.connect(self._stats_delete_selected)
+            ed = menu.addAction("编辑这一条…")
+            ed.triggered.connect(self._stats_edit_selected)
+            menu.addSeparator()
+            day = str(r.get("day") or "")
+            if day:
+                act2 = menu.addAction("删除 %s 这一天的全部记录…" % day)
+                act2.triggered.connect(
+                    lambda _c=False, _d=day: self._stats_delete_day(_d))
+        menu.addSeparator()
+        act3 = menu.addAction("清理历史重复…")
+        act3.triggered.connect(self._stats_dedupe_history)
+        menu.exec(tbl.mapToGlobal(pos))
+
+    def _stats_dedupe_history(self) -> None:
+        """★ v2.9.26：清理历史重复（先预览、再确认、后执行）"""
+        if self.stats is None:
+            return
+        dlg = StatsDedupeDialog(self, self.stats)
+        dlg.exec()
+        self._stats_refresh(force=True)
+        self._stats_init_days()
+
+    def _stats_open_detail(self) -> None:
+        """双击聚合表某一行 → 看那个人的逐手明细（复用既有窗口）"""
+        tbl = getattr(self, "tbl_stats_live", None)
+        if tbl is None or self.stats is None:
+            return
+        idx = tbl.currentRow()
+        try:
+            rows = self.stats.aggregate(self.cmb_stats_day.currentData())
+        except Exception:                  # noqa: BLE001
+            rows = []
+        if idx < 0 or idx >= len(rows):
+            return
+        key = str(rows[idx].get("user_key") or "")
+        if not key:
+            return
+        dlg = StatsDetailDialog(self, self.stats, key, self.cmb_stats_day.currentData())
+        # ★ v2.9.23：登记成「已打开的明细窗」，这样设置窗口改列时它也能跟着刷新
+        self._detail_dlg = dlg
+        try:
+            dlg.exec()
+        finally:
+            self._detail_dlg = None
+
     # ---- 番表页
     def _build_fan_page(self) -> QWidget:
         page = QWidget()
@@ -1842,16 +2876,19 @@ class MahjongFanWindow(QMainWindow):
         bar.addAction(self.act_settings)
 
         # ★ v2.9.6：统计（桌面端查看全部人的算番统计；手机/平板 Web 端在页面底栏「统计」看）
+        # ★ v2.9.19：有了「统计」页，菜单项改成直接跳过去（那儿实时刷新、还能改 / 删记录）；
+        #   原模态窗口 open_stats() 仍保留，供命令行 / 高级用户直接调用。
         self.act_stats = QAction("统计(&T)", self)
-        self.act_stats.setToolTip("查看所有用户（含手机/平板 Web 端、桌面端本地）的算番统计")
-        self.act_stats.triggered.connect(lambda: self.open_stats())
+        self.act_stats.setToolTip("跳到「统计」页：实时看局域网算番，可编辑 / 删除记录")
+        self.act_stats.triggered.connect(lambda: self._goto_page(1))
         bar.addAction(self.act_stats)
 
         m_help = bar.addMenu("帮助(&H)")
+        # ★ v2.9.19：页面索引 算番0 / 统计1 / 番表2 / 用法3（多了「统计」整体后移）
         act_help = QAction("用法说明(&H)", self)
-        act_help.triggered.connect(lambda: self._goto_page(2))
+        act_help.triggered.connect(lambda: self._goto_page(3))
         act_fan = QAction("番种表(&T)", self)
-        act_fan.triggered.connect(lambda: self._goto_page(1))
+        act_fan.triggered.connect(lambda: self._goto_page(2))
         act_about = QAction("关于(&A)", self)
         act_about.triggered.connect(self.show_about)
         m_help.addAction(act_help)
@@ -1948,12 +2985,19 @@ class MahjongFanWindow(QMainWindow):
     def _set_stats_cols(self, cols) -> None:
         """★ v2.9.7：「统计」窗口显示哪几列
 
-        来源：设置 → 通用 →「统计显示列」的复选框。
+        来源：设置 → 统计列 →「统计显示列」的复选框。
         改动立刻生效：① 已打开的统计窗口重建表头；② 自动落盘（下次启动沿用）；
-        ③ 已开启的 Web 服务同步换新默认值（手机刷新页面后按新列显示，
-           除非那台手机在自己「设置」里改过 —— 那就以手机为准）。
+        ③ 已开启的 Web 服务同步换新值 —— ★ v2.9.21 起这是<b>所有 Web 客户端</b>
+           的唯一来源：手机刷新页面就按新列显示（本机设置读使用已取消）。
         """
         self.stats_cols = list(stats_cols_normalize_(cols, STATS_COLS_DESKTOP_DEFAULT_))
+        # ★ v2.9.22：统计页自己的「按人聚合」表也按这套列走（设置窗口改完立刻跟着变）
+        if getattr(self, "tbl_stats_live", None) is not None:
+            try:
+                self._stats_rebuild_headers()
+                self._stats_refresh(force=True)
+            except Exception as _exc:      # noqa: BLE001
+                sys.stderr.write("[stats] 重建统计页表头失败：%r\n" % (_exc,))
         dlg = getattr(self, "_stats_dlg", None)
         if dlg is not None:
             try:
@@ -1971,7 +3015,8 @@ class MahjongFanWindow(QMainWindow):
     def _set_detail_cols(self, cols) -> None:
         """★ v2.9.10：「逐手明细」窗口显示哪几列
 
-        与 `_set_stats_cols` 完全对称：改动立刻生效、同步给已开启的 Web 服务、自动落盘。
+        与 `_set_stats_cols` 完全对称：改动立刻生效、同步给已开启的 Web 服务（★ v2.9.21 起
+        手机 / 平板一律跟随这里，本机设置读使用已取消）、自动落盘。
         设置窗口与统计/明细窗口都是模态的，正常情况下改列时明细窗口是关着的；
         这里仍做一次刷新调用（防御性 —— 万一以后改成非模态就直接生效）。
         """
@@ -1989,6 +3034,31 @@ class MahjongFanWindow(QMainWindow):
                 srv.detail_cols = tuple(self.detail_cols)
             except Exception:              # noqa: BLE001
                 pass
+        # ★ v2.9.23：统计页那个「明细表列 ▾（N）」按钮上的数字跟着变
+        b3 = getattr(self, "btn_stats_detail_cols", None)
+        if b3 is not None:
+            b3.setText("明细表列 ▾（%d）" % len(self.detail_cols))
+        self._autosave_settings()
+
+    # ---- ★ v2.9.27：同一手牌只留一条（桌面端设置里改，两端共用）
+    def _apply_merge_policy(self) -> None:
+        """把 self.same_hand_merge 灌进统计库（库在就设，不在就跳过）
+
+        统计库是桌面端与 Web 端共用的同一个文件，所以改这里等于两端一起改；
+        已经写进去的记录不受影响（关闭开关不会删数据，只是以后算一次记一条）。
+        """
+        sdb = getattr(self, "stats", None)
+        if sdb is None:
+            return
+        try:
+            sdb.set_merge_policy(bool(self.same_hand_merge), SAME_HAND_UPSERT_MS_)
+        except Exception as _exc:          # noqa: BLE001
+            sys.stderr.write("[stats] 设置合并策略失败：%r\n" % (_exc,))
+
+    def _set_same_hand_merge(self, checked: bool) -> None:
+        """设置里勾 / 取消「同一手牌只留一条」——立刻生效并落盘"""
+        self.same_hand_merge = bool(checked)
+        self._apply_merge_policy()
         self._autosave_settings()
 
     def _set_speak_default(self, checked: bool) -> None:
@@ -2061,6 +3131,11 @@ class MahjongFanWindow(QMainWindow):
         if was_running:
             self._api_stop(silent=True, remember=False)
         self._global_settings = {}
+        self.page_widths = {}          # ★ v2.9.22：每页宽度也回默认
+        self.rec_cols = list(REC_COLS_DEFAULT_)   # ★ v2.9.22
+        self.same_hand_merge = True    # ★ v2.9.27：同手牌只留一条 → 回默认「开」
+        self.stats_day = ""            # ★ v2.9.28：统计页日期 / 范围 → 回「全部」
+        self.stats_client = ""
         self.speak_default = SPEAK_DEFAULT
         self.voice_set = VOICE_SET                                        # ★ v2.9.3 语音包
         self.api_port = DEFAULT_API_PORT
@@ -2081,6 +3156,57 @@ class MahjongFanWindow(QMainWindow):
     def _goto_page(self, idx: int) -> None:
         self.stack.setCurrentIndex(idx)
         self.nav_group.button(idx).setChecked(True)
+        self._apply_page_width(idx)      # ★ v2.9.22：同一页再点（索引没变）也要生效
+
+    def _apply_page_width(self, idx: int) -> None:
+        """★ v2.9.22：把窗口宽度调成这一页合适的样子（用户提的：算番窄一点、统计宽一点）
+
+        规则：
+          · 只改**宽度**，高度和纵向位置一律不动；最大化 / 全屏时什么都不做
+          · 优先用这一页被手动拉过的宽度（self.page_widths），否则用预设 PAGE_WIDTHS
+          · 夹在 MIN_W 与屏幕可用宽度之间，免得超出屏幕
+          · 宽度已经对了就直接返回（避免无谓的 resize 事件连环触发）
+        """
+        if self.isMaximized() or self.isFullScreen():
+            return
+        w = self.page_widths.get(str(idx))
+        if not isinstance(w, int) or w <= 0:
+            w = int(PAGE_WIDTHS.get(idx, WIN_W))
+        scr = self.screen()
+        if scr is not None:
+            avail = int(scr.availableGeometry().width())
+            if avail > 0:
+                w = min(w, avail)
+        w = max(MIN_W, int(w))
+        geo = self.geometry()
+        if geo.width() == w:
+            return
+        self._adjusting_width = True
+        try:
+            self.resize(w, geo.height())
+        finally:
+            self._adjusting_width = False
+
+    def resizeEvent(self, event) -> None:       # noqa: N802（Qt 的命名）
+        """★ v2.9.22：用户手动拉宽窗口时，记住当前页的宽度（切回这页就用这个宽度）
+
+        自己按页调宽时（_adjusting_width=True）不记 —— 否则预设值会被写死成"手动值"。
+        """
+        super().resizeEvent(event)
+        if getattr(self, "_adjusting_width", False):
+            return
+        if getattr(self, "_loading", True) or not self.isVisible():
+            return
+        if self.isMaximized() or self.isFullScreen():
+            return
+        stack = getattr(self, "stack", None)
+        if stack is None:
+            return
+        idx = stack.currentIndex()
+        if idx < 0:
+            return
+        self.page_widths[str(idx)] = int(self.width())
+        self._autosave_settings()
 
     def show_about(self) -> None:
         box = QMessageBox(self)
@@ -2360,6 +3486,11 @@ class MahjongFanWindow(QMainWindow):
             "voice_set": str(self.voice_set),              # ★ v2.9.3 读番语音包
             "stats_cols": list(self.stats_cols),           # ★ v2.9.7 统计面板显示哪几列
             "detail_cols": list(self.detail_cols),         # ★ v2.9.10 逐手明细显示哪几列
+            "rec_cols": list(self.rec_cols),               # ★ v2.9.22 统计页「最近记录」显示哪几列
+            "page_widths": dict(self.page_widths),         # ★ v2.9.22 每页各自的宽度
+            "same_hand_merge": bool(self.same_hand_merge),  # ★ v2.9.27 同手牌只留一条
+            "stats_day": str(self.stats_day or ""),        # ★ v2.9.28 统计页选中的日期
+            "stats_client": str(self.stats_client or ""),  # ★ v2.9.28 统计页选中的范围
             "mode": self.mode,
             "page": self.stack.currentIndex(),
             "api_port": int(self.api_port),
@@ -2407,12 +3538,30 @@ class MahjongFanWindow(QMainWindow):
         #   （名字对应的目录被删了也不用管：resolve_voice_dir() 会自动回退，不会没声音）
         self.voice_set = str(s.get("voice_set") or VOICE_SET)
         # ★ v2.9.7：统计面板显示哪几列（老设置没有这个键 → 桌面端默认全列）
-        # ★ v2.9.9：老设置补齐新增列（番种）
-        self.stats_cols = list(stats_cols_new_merged_(s.get("stats_cols"),
-                                                      STATS_COLS_DESKTOP_DEFAULT_))
-        # ★ v2.9.10：逐手明细显示哪几列（老设置没有这个键 → 明细 10 列全开）
-        self.detail_cols = list(detail_cols_new_merged_(s.get("detail_cols"),
-                                                        DETAIL_COLS_DESKTOP_DEFAULT_))
+        # ★ v2.9.24：只规整、不补新列（补新列会把用户删掉的列又勾回来）
+        self.stats_cols = list(stats_cols_normalize_(s.get("stats_cols"),
+                                                     STATS_COLS_DESKTOP_DEFAULT_))
+        # ★ v2.9.10：逐手明细显示哪几列（老设置没有这个键 → 明细全列）
+        self.detail_cols = list(detail_cols_normalize_(s.get("detail_cols"),
+                                                       DETAIL_COLS_DESKTOP_DEFAULT_))
+        # ★ v2.9.22：统计页「最近记录」表显示哪几列（老设置没有这个键 → 回原来那 8 列）
+        self.rec_cols = list(rec_cols_normalize_(s.get("rec_cols"), REC_COLS_DEFAULT_))
+        # ★ v2.9.27：同一手牌只留一条（老设置没有这个键 → 默认开）
+        self.same_hand_merge = bool(s.get("same_hand_merge", True))
+        self._apply_merge_policy()
+        # ★ v2.9.28：统计页「日期 / 范围」上次选的是什么（老设置没有这两个键 → 全部）
+        self.stats_day = str(s.get("stats_day") or "")
+        self.stats_client = str(s.get("stats_client") or "")
+        self._stats_restore_filters()
+        # ★ v2.9.22：每页各自的宽度（老设置没有 → 空字典，一律用 PAGE_WIDTHS 预设）
+        self.page_widths = {}
+        _pw = s.get("page_widths")
+        if isinstance(_pw, dict):
+            for _k, _v in _pw.items():
+                try:
+                    self.page_widths[str(_k)] = int(_v)
+                except Exception:      # noqa: BLE001
+                    pass
         for w in (self.cb_tsumo, self.cb_last_tile,
                   self.cb_special_a, self.cb_special_b, self.cb_speak):
             w.blockSignals(False)
@@ -2438,7 +3587,8 @@ class MahjongFanWindow(QMainWindow):
             getattr(self, "btn_mode_" + mode).setChecked(True)
             self.mode = mode
         page = s.get("page")
-        if isinstance(page, int) and 0 <= page <= 2:
+        # ★ v2.9.19：页面从 3 个变 4 个（算番0/统计1/番表2/用法3）
+        if isinstance(page, int) and 0 <= page <= 3:
             self._goto_page(page)
         try:
             self.api_port = int(s.get("api_port") or DEFAULT_API_PORT)
@@ -2494,6 +3644,10 @@ class MahjongFanWindow(QMainWindow):
             self.timer_autosave.stop()
         except Exception:       # noqa: BLE001
             pass
+        try:                    # ★ v2.9.19：别让统计轮询在退出后还查库
+            self.stats_timer.stop()
+        except Exception:       # noqa: BLE001
+            pass
         if self.voice is not None:      # ★ v2.9.0：退出时别还在念
             self.voice.stop()
         # ★ 先关本地 API（记住「下次启动自动开」的状态），再存设置
@@ -2533,9 +3687,21 @@ class MahjongFanWindow(QMainWindow):
         return out
 
     def _physical_counts(self) -> Dict[int, int]:
+        """每种牌实际已用掉几张（立牌 + 副露 + 和张）。
+
+        ★ v2.9.30 修 bug：吃（chi）的一组是 3 张**不同**的牌，必须逐张各记 1；
+        以前一律按 m.tiles[0] 记 3 张，等于把 123 万算成「1 万 3 张、2/3 万 0 张」，
+        于是「吃 123 万后碰 1 万」被误判成 5 张而点不动（误挡），
+        「吃 123 万后杠 2 万 / 3 万」又被放行成 5 张（漏挡）。
+        碰（pong）与杠（kong）的 tiles 全是同一张牌，仍按首张记 len 张。
+        """
         used: Dict[int, int] = dict(self.concealed)
         for m in self.melds:
-            used[m.tiles[0]] = used.get(m.tiles[0], 0) + len(m.tiles)
+            if m.kind == "chi":
+                for t in m.tiles:
+                    used[t] = used.get(t, 0) + 1
+            else:
+                used[m.tiles[0]] = used.get(m.tiles[0], 0) + len(m.tiles)
         if self.win_tile is not None:
             used[self.win_tile] = used.get(self.win_tile, 0) + 1
         return used
@@ -2807,15 +3973,19 @@ class MahjongFanWindow(QMainWindow):
     # ---------------------------------------------------------- 刷新与算番
     def _refresh_all(self, *args) -> None:       # noqa: ARG002
         self._update_special_labels()
-        # 牌区计数徽标
+        # 牌区彩色角标（★ v2.9.18）：立牌 / 暗杠 / 明杠 / 碰 / 吃 / 胡牌 各一个圆点、各一个数字，
+        # 同一张牌跨多类就并排显示多个。计数口径统一放在 mahjong_core.all_badges()，
+        # 桌面版与 Web 版共用，避免两端算出不同的数。
+        pending = self.pending_chi if self.mode == "chi" else ()
+        if all_badges is None:          # 引擎 import 失败时的兜底：只显示立牌张数
+            badge_map = {}
+            for tid in list(self.concealed) + ([self.win_tile] if self.win_tile is not None else []):
+                badge_map.setdefault(tid, {})["stand"] = (
+                    self.concealed.get(tid, 0) + (1 if self.win_tile == tid else 0))
+        else:
+            badge_map = all_badges(self.concealed, self.melds, self.win_tile, pending)
         for code, btn in self.buttons.items():
-            tid = tile_of(code)
-            n = self.concealed.get(tid, 0)
-            if self.mode == "chi":
-                n += self.pending_chi.count(tid)
-            if self.win_tile == tid:
-                n += 1
-            btn.set_count(n)
+            btn.set_badges(badge_map.get(tile_of(code), {}))
         # 副露（★ 点某一张＝撤销那一组副露）
         items = self._meld_items()
         self.row_melds.set_tiles([c for c, _ in items],
@@ -3129,6 +4299,338 @@ def _device_cell(key: str, r: dict) -> str:
     return ""
 
 
+def _apply_col_modes(tbl, keys) -> None:
+    """★ v2.9.22：按列 key 设置列宽模式（首列与「番种」列拉伸，其余按内容自适应）
+
+    keys 与 tbl 的实际列一一对应；「番种」这种长文本拉伸才好看，
+    其余（番数 / 次数 / 时间…）内容定长，按内容自适应最省地方。
+    """
+    hh = tbl.horizontalHeader()
+    stretch = {0}
+    if "fans" in keys:
+        try:
+            stretch.add(list(keys).index("fans"))
+        except ValueError:
+            pass
+    for j in range(tbl.columnCount()):
+        hh.setSectionResizeMode(
+            j, QHeaderView.Stretch if j in stretch else QHeaderView.ResizeToContents)
+
+
+def fill_table_quiet(tbl, fill, apply_modes) -> None:
+    """★ v2.9.20：静默填表 —— 填的过程中把列宽模式临时降级，填完再一次性恢复
+
+    【为什么必须有这个】`QHeaderView` 的 `ResizeToContents` 是**每写完一个单元格
+    就重算一遍全表列宽**，于是「填 N 行」退化成 O(N²)。统计页「最近记录」
+    180 行 × 8 列，实测一次刷新要 **49.8 秒**（用户点「统计」就像死机）。
+    填的时候把列全改成 `Interactive`（不重算），填完再设回 Stretch /
+    ResizeToContents，同一份数据只要 **0.1 秒**（实测快约 500 倍）。
+
+    ★ `setUpdatesEnabled(False)` 治不了这个 —— 实测反而更慢（54 秒）：
+      列宽重算是同步发生的，跟重绘开关无关，只有改 resizeMode 才躲得开。
+
+    ★ 三个表共用：统计页两张表 + 统计/明细两个弹窗（弹窗行更多时同样会卡）。
+    """
+    hh = tbl.horizontalHeader()
+    n = tbl.columnCount()
+    tbl.setUpdatesEnabled(False)
+    try:
+        for j in range(n):
+            hh.setSectionResizeMode(j, QHeaderView.Interactive)
+        fill()
+    finally:
+        apply_modes()
+        tbl.setUpdatesEnabled(True)
+
+
+def _fans_brief(fans) -> str:
+    """★ v2.9.19：番种文本 → 一句人话（表格里显示，完整串挂 tooltip）
+
+    输入可以是 `"无番和|无番和|碰碰和"`（落库格式），也可以是列表；
+    输出形如 `"无番和×2、碰碰和"`。空的就是「-」。
+    """
+    if isinstance(fans, (list, tuple)):
+        names = [str(x) for x in fans if str(x).strip()]
+    else:
+        names = [s for s in str(fans or "").split("|") if s.strip()]
+    if not names:
+        return "-"
+    seen: List[str] = []
+    for n in names:
+        if n not in seen:
+            seen.append(n)
+    parts = []
+    for n in seen:
+        c = names.count(n)
+        parts.append("%s×%d" % (n, c) if c > 1 else n)
+    return "、".join(parts)
+
+
+class StatsEditDialog(QDialog):
+    """★ v2.9.19：服务器端「改一条算番记录」的小对话框
+
+    只开四个判定字段：番数 / 起番 / 达标 / 番种数（外加番种名，只能看不能改 ——
+    番种名是从番型推出来的，手改了就与番数对不上，反而不如不改）。
+    时间、user_key、IP、UA 一律只读显示：那是「事实」，改了就说不清是谁算的。
+    """
+
+    def __init__(self, parent, row: dict):
+        super().__init__(parent)
+        self.setWindowTitle("改这一条记录")
+        self.setMinimumWidth(420)
+        self._row = dict(row or {})
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(8)
+
+        ts = int(self._row.get("ts_ms") or 0)
+        when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts / 1000.0))
+        who = _device_cell("nick", self._row)
+        who = who if who and who != "-" else str(self._row.get("user_key") or "?")
+        head = QLabel("%s　%s　（#%s）" % (when, who, self._row.get("id")))
+        head.setStyleSheet("font-weight:bold;")
+        lay.addWidget(head)
+
+        fact = QLabel("来源与时间不可改：IP %s　｜　UA %s"
+                     % (self._row.get("ip") or "-",
+                        _ua_brief(str(self._row.get("ua") or ""))))
+        fact.setStyleSheet("color:#666;font-size:11px;")
+        fact.setWordWrap(True)
+        lay.addWidget(fact)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(6)
+        self.sp_fan = QSpinBox()
+        self.sp_fan.setRange(0, 999)
+        self.sp_fan.setValue(int(self._row.get("total_fan") or 0))
+        self.sp_fan.setSuffix(" 番")
+        grid.addWidget(QLabel("合计番数"), 0, 0)
+        grid.addWidget(self.sp_fan, 0, 1)
+        self.sp_base = QSpinBox()
+        self.sp_base.setRange(0, 999)
+        self.sp_base.setValue(int(self._row.get("base") or 0))
+        self.sp_base.setSuffix(" 番")
+        grid.addWidget(QLabel("起番"), 1, 0)
+        grid.addWidget(self.sp_base, 1, 1)
+        self.cb_reach = QCheckBox("这一手达标（够 8 番起和）")
+        self.cb_reach.setChecked(bool(self._row.get("reach")))
+        grid.addWidget(self.cb_reach, 2, 0, 1, 2)
+        self.sp_fans_n = QSpinBox()
+        self.sp_fans_n.setRange(0, 99)
+        self.sp_fans_n.setValue(int(self._row.get("fans_n") or 0))
+        self.sp_fans_n.setSuffix(" 种")
+        grid.addWidget(QLabel("番种数"), 3, 0)
+        grid.addWidget(self.sp_fans_n, 3, 1)
+        lay.addLayout(grid)
+
+        fans_txt = _fans_brief(self._row.get("fans"))
+        lbl_f = QLabel("番种（只读）：" + (fans_txt if fans_txt else "-"))
+        lbl_f.setStyleSheet("color:#666;")
+        lbl_f.setWordWrap(True)
+        lay.addWidget(lbl_f)
+
+        tip = QLabel("这里改的是已落库的记录，改完立刻生效；手机端下次刷新就能看到新数字。")
+        tip.setStyleSheet("color:#666;font-size:11px;")
+        tip.setWordWrap(True)
+        lay.addWidget(tip)
+
+        box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        box.button(QDialogButtonBox.Ok).setText("保存")
+        box.button(QDialogButtonBox.Cancel).setText("取消")
+        box.accepted.connect(self.accept)
+        box.rejected.connect(self.reject)
+        lay.addWidget(box)
+
+    def values(self) -> dict:
+        """给 `StatsDB.update_row(**values)` 用的四个字段"""
+        return {"total_fan": int(self.sp_fan.value()),
+                "base": int(self.sp_base.value()),
+                "reach": 1 if self.cb_reach.isChecked() else 0,
+                "fans_n": int(self.sp_fans_n.value())}
+
+
+class StatsDedupeDialog(QDialog):
+    """★ v2.9.26：清理「历史重复」记录（先预览、再确认、后执行）。
+
+    为什么需要它：v2.9.26 之前每次「重新算一手」都会**新增一条**记录（同一手牌改个
+    选项就是一条），所以老库里同一次算番折腾会留下 10~24 条记录，统计数字虚高。
+    v2.9.26 起新记录会就地合并（同一手牌指纹 10 分钟内只留一条），但**已经写进库的
+    老记录没法凭空识别**，只能按时间窗归组：
+
+    - 同一个人（user_key）、同一天、相邻两条记录间隔 ≤ 窗口秒数 → 算作「同一次折腾」
+    - 一组里**留番数最大**的那一条（并列时留时间较晚的）
+    - 删掉的条目**不可恢复**，所以必须先在表格里看清楚：删几组、删几条、少算多少番
+    """
+
+    COLS = ("日期", "是谁", "这一组", "保留", "删掉")
+
+    def __init__(self, parent, stats):
+        super().__init__(parent)
+        self.stats = stats
+        self.setWindowTitle("清理历史重复记录")
+        self.setMinimumSize(720, 460)
+        self._plan: Dict = {}
+        self._done = False
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(8)
+
+        head = QLabel("把「同一次算番折腾」留下的多条记录，按时间窗合成一条")
+        head.setStyleSheet("font-weight:bold;")
+        lay.addWidget(head)
+
+        why = QLabel(
+            "以前每点一次重新计算、改一个选项，都会往库里多写一条；同一个人同一天"
+            "连着几条通常就是同一手牌。这里按<b>相邻记录间隔</b>把它们归成一组，"
+            "每组只留<b>番数最大</b>的那一条（并列时留时间较晚的）。\n"
+            "删除<b>不可恢复</b>——先看下面的预览，确认条数与番数对得上再点「开始清理」。")
+        why.setWordWrap(True)
+        why.setStyleSheet("color:#666;font-size:11px;")
+        lay.addWidget(why)
+
+        bar = QHBoxLayout()
+        bar.setSpacing(6)
+        bar.addWidget(QLabel("时间窗"))
+        self.sp_win = QSpinBox()
+        self.sp_win.setRange(10, 1800)
+        self.sp_win.setSingleStep(10)
+        self.sp_win.setSuffix(" 秒")
+        self.sp_win.setValue(int(DEDUPE_DEFAULT_WINDOW_SEC))
+        self.sp_win.setToolTip(
+            "同一个人、同一天，相邻两条记录间隔不超过这个秒数，就算同一次算番折腾。\n"
+            "默认 120 秒：小一点更保守（删得少、可能留重复），大一点删得干净（但可能误删真的连打几手）。")
+        bar.addWidget(self.sp_win)
+        self.btn_scan = QPushButton("重新预览")
+        self.btn_scan.clicked.connect(self._scan)
+        bar.addWidget(self.btn_scan)
+        bar.addStretch(1)
+        self.btn_run = QPushButton("开始清理")
+        self.btn_run.setToolTip("按上面的预览结果删掉多余记录（不可恢复）")
+        self.btn_run.clicked.connect(self._run)
+        self.btn_run.setEnabled(False)
+        bar.addWidget(self.btn_run)
+        lay.addLayout(bar)
+
+        self.lbl_sum = QLabel()
+        self.lbl_sum.setStyleSheet("font-weight:bold;padding:2px 0;")
+        self.lbl_sum.setWordWrap(True)
+        lay.addWidget(self.lbl_sum)
+
+        self.tbl = QTableWidget(0, len(self.COLS))
+        self.tbl.setHorizontalHeaderLabels(list(self.COLS))
+        self.tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tbl.setAlternatingRowColors(True)
+        lay.addWidget(self.tbl, 1)
+
+        self.pb = QProgressBar()
+        self.pb.setRange(0, 100)
+        self.pb.setValue(0)
+        self.pb.setTextVisible(True)
+        lay.addWidget(self.pb)
+
+        tip = QLabel("只删「同一组里番数较小」的那些；每组一定留一条，所以清理后每人每天至少还有记录。")
+        tip.setStyleSheet("color:#666;font-size:11px;")
+        tip.setWordWrap(True)
+        lay.addWidget(tip)
+
+        box = QDialogButtonBox(QDialogButtonBox.Close)
+        box.button(QDialogButtonBox.Close).setText("关闭")
+        box.rejected.connect(self.reject)
+        lay.addWidget(box)
+
+        self._scan()
+
+    # ---- 预览
+    def _scan(self) -> None:
+        """按当前时间窗重算一遍预览（只读，不动库）"""
+        if self.stats is None:
+            self.lbl_sum.setText("统计库没打开，没法清理。")
+            self.btn_run.setEnabled(False)
+            return
+        self.pb.setValue(0)
+        plan = self.stats.dedupe_plan(int(self.sp_win.value()))
+        self._plan = dict(plan or {})
+        groups = list(self._plan.get("groups") or [])
+        total = int(self._plan.get("total") or 0)
+        drop = int(self._plan.get("drop") or 0)
+        keep = int(self._plan.get("keep") or 0)
+        if not self._plan.get("ok", True):
+            self.lbl_sum.setText("预览失败：统计库读取异常，先看看程序日志。")
+            self.btn_run.setEnabled(False)
+            return
+        if drop <= 0:
+            self.lbl_sum.setText(
+                "共 %d 条记录，按 %d 秒窗口看没有需要合并的 —— 不用清理。"
+                % (total, int(self.sp_win.value())))
+            self.btn_run.setEnabled(False)
+        else:
+            self.lbl_sum.setText(
+                "共 %d 条 → 保留 %d 条，删除 %d 条（涉及 %d 组）。"
+                % (total, keep, drop, len(groups)))
+            self.btn_run.setEnabled(True)
+        self._fill(groups)
+
+    def _fill(self, groups: List[dict]) -> None:
+        self.tbl.setRowCount(len(groups))
+        for i, g in enumerate(groups):
+            day = str(g.get("day") or "-")
+            nick = str(g.get("nick") or "").strip()
+            who = nick if nick else str(g.get("user_key") or "-")
+            n = int(g.get("drop") or 0)
+            vals = (day, who, "删 %d 条" % n,
+                    "%d 番" % int(g.get("keep_fan") or 0),
+                    "少算 %d 番" % int(g.get("drop_fan") or 0))
+            for j, v in enumerate(vals):
+                it = QTableWidgetItem(str(v))
+                if j >= 2:
+                    it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.tbl.setItem(i, j, it)
+        hh = self.tbl.horizontalHeader()
+        for j in range(len(self.COLS)):
+            hh.setSectionResizeMode(j, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(1, QHeaderView.Stretch)
+
+    # ---- 执行
+    def _run(self) -> None:
+        ids = list(self._plan.get("drop_ids") or [])
+        if not ids or self.stats is None:
+            return
+        ans = QMessageBox.question(
+            self, "确认清理",
+            "确定删除 %d 条重复记录？\n\n剩下的记录番数不受影响，但删掉的找不回来了。"
+            % len(ids),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if ans != QMessageBox.Yes:
+            return
+        self.btn_run.setEnabled(False)
+        self.btn_scan.setEnabled(False)
+        total = len(ids)
+        done = 0
+        self.pb.setValue(0)
+        try:
+            for i in range(0, total, 200):          # 分批删 + 刷进度，避免大库卡住界面
+                chunk = ids[i:i + 200]
+                done += int(self.stats.dedupe_apply(chunk) or 0)
+                pct = int(round(100.0 * min(i + 200, total) / total))
+                self.pb.setValue(min(100, pct))
+                QApplication.processEvents()
+        except Exception:                            # noqa: BLE001 —— 清理失败不能把窗口搞崩
+            traceback.print_exc()
+        self.pb.setValue(100)
+        self._done = True
+        QMessageBox.information(
+            self, "清理完成", "已删除 %d 条重复记录。" % done)
+        self.btn_scan.setEnabled(True)
+        self._scan()                                # 重新预览一次，通常变成「不用清理了」
+
+    def changed(self) -> bool:
+        """调用方据此决定要不要刷新统计页"""
+        return bool(self._done)
+
+
 class StatsDialog(QDialog):
     """算番统计查看窗口（桌面端）。与 Web 端「统计」面板共用同一份 SQLite 数据。
 
@@ -3216,9 +4718,15 @@ class StatsDialog(QDialog):
         self.tbl.setColumnCount(len(self.cols))
         self.tbl.setHorizontalHeaderLabels(
             [self.COL_LABELS.get(k, k) for k in self.cols])
+        self._reapply_col_modes()
+        self._refresh()
+
+    def _reapply_col_modes(self) -> None:
+        """按当前列清单设列宽模式（★ v2.9.20：静默填表填完要再调一次）"""
         hh = self.tbl.horizontalHeader()
         for c, k in enumerate(self.cols):
-            # 「用户」吃掉剩余宽度；「番种」那串可能很长，给固定宽度 + 可拖动（不然会把别的列挤出屏幕）
+            # 「用户」吃掉剩余宽度；「番种」那串可能很长，给固定宽度 + 可拖动
+            # （不然会把别的列挤出屏幕）
             if k == "user":
                 mode = QHeaderView.Stretch
             elif k == "fans":
@@ -3228,7 +4736,6 @@ class StatsDialog(QDialog):
             hh.setSectionResizeMode(c, mode)
         if "fans" in self.cols:
             self.tbl.setColumnWidth(self.cols.index("fans"), 240)
-        self._refresh()
 
     def _init_days(self) -> None:
         self.cmb_day.blockSignals(True)
@@ -3264,14 +4771,19 @@ class StatsDialog(QDialog):
                               else "番种：（还没有记录到番种——老记录没有番种名，"
                                    "升级后新算的手才有）")
         self._rows = rows           # ★ v2.9.9：明细窗口要按 user_key 反查，先留一份
-        self.tbl.setRowCount(len(rows))
-        for i, u in enumerate(rows):
-            for c, k in enumerate(self.cols):
-                item = QTableWidgetItem(self._cell_text(k, u))
-                tip = self._cell_tip(k, u)          # ★ 完整 UUID / UA 挂 tooltip
-                if tip:
-                    item.setToolTip(tip)
-                self.tbl.setItem(i, c, item)
+
+        def fill() -> None:
+            self.tbl.setRowCount(len(rows))
+            for i, u in enumerate(rows):
+                for c, k in enumerate(self.cols):
+                    item = QTableWidgetItem(self._cell_text(k, u))
+                    tip = self._cell_tip(k, u)      # ★ 完整 UUID / UA 挂 tooltip
+                    if tip:
+                        item.setToolTip(tip)
+                    self.tbl.setItem(i, c, item)
+
+        # ★ v2.9.20：静默填表（ResizeToContents 下逐格填会退化成 O(N²)）
+        fill_table_quiet(self.tbl, fill, self._reapply_col_modes)
 
     def _open_detail(self) -> None:
         """★ v2.9.9：打开选中那个人的「逐手明细」窗口"""
@@ -3287,7 +4799,17 @@ class StatsDialog(QDialog):
         dlg = StatsDetailDialog(self, self.stats,
                                 str(u.get("user_key") or ""),
                                 self.cmb_day.currentData())
-        dlg.exec()
+        # ★ v2.9.23：登记到主窗口的 _detail_dlg 上（parent 是统计窗口时也要找到主窗口）
+        host = self.parent()
+        if not hasattr(host, "_set_detail_cols"):
+            host = None
+        if host is not None:
+            host._detail_dlg = dlg              # noqa: SLF001
+        try:
+            dlg.exec()
+        finally:
+            if host is not None:
+                host._detail_dlg = None         # noqa: SLF001
 
     # ---- 单元格取值（★ v2.9.7：按列 key 取，不再写死 8 列）
     def _cell_text(self, key: str, u: dict) -> str:
@@ -3350,6 +4872,7 @@ class StatsDetailDialog(QDialog):
         self.user_key = user_key
         self.day = day
         self.cols: List[str] = []          # ★ v2.9.10 当前显示的列 key（按顺序）
+        self._rows: List[Dict] = []        # ★ v2.9.28 当前显示的行（右键删除 / 编辑要用 id）
         self.setWindowTitle("逐手明细 · " + (user_key or "?"))
         self.setMinimumSize(760, 420)
 
@@ -3362,10 +4885,27 @@ class StatsDetailDialog(QDialog):
         self.lbl_fans.setStyleSheet("color:#666;padding:0 0 4px;")
         lay.addWidget(self.lbl_fans)
 
+        # ★ v2.9.23：就在这个窗口里改列，不用关掉再去「设置 → 统计列」
+        colbar = QHBoxLayout()
+        colbar.setSpacing(6)
+        self.btn_cols = QPushButton()
+        self.btn_cols.setToolTip(
+            "勾选这个明细表显示哪几列（勾完立刻生效并自动保存；"
+            "手机 / 平板也按这套列显示）")
+        self._menu_cols = QMenu(self.btn_cols)
+        self._menu_cols.aboutToShow.connect(self._fill_col_menu)
+        self.btn_cols.setMenu(self._menu_cols)
+        colbar.addWidget(self.btn_cols)
+        colbar.addStretch(1)
+        lay.addLayout(colbar)
+
         self.tbl = QTableWidget(0, 0)      # ★ v2.9.10：列数由 rebuild_columns() 决定
         self.tbl.setEditTriggers(QTableWidget.NoEditTriggers)
         self.tbl.setSelectionBehavior(QTableWidget.SelectRows)
         self.tbl.setAlternatingRowColors(True)
+        # ★ v2.9.28：右键明细 → 复制 / 编辑 / 删除（不用先跑去统计页找那一行）
+        self.tbl.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tbl.customContextMenuRequested.connect(self._detail_menu)
         lay.addWidget(self.tbl, 1)
 
         foot = QHBoxLayout()
@@ -3381,6 +4921,135 @@ class StatsDetailDialog(QDialog):
         lay.addLayout(foot)
         # ★ v2.9.10：先按主窗口的设置建好列（内部会顺带刷一次数据）
         self.rebuild_columns(self._win_cols())
+
+    # ---- ★ v2.9.28：右键菜单（复制这一条 / 复制番种 / 编辑 / 删除）
+    def _menu_row(self, pos):
+        """右键落在哪一行就选中哪一行，返回那一行的数据（没有就 None）
+
+        ★ 先切选择再取数据：右键点在没选中的行上时，操作必须作用在**点的那一行**，
+          而不是上一次选中的行（那种错删最难发现）。
+        """
+        self.tbl.setFocus()
+        idx = self.tbl.indexAt(pos)
+        if not idx.isValid():
+            return None
+        self.tbl.setCurrentCell(idx.row(), idx.column())
+        i = self.tbl.currentRow()
+        if 0 <= i < len(self._rows):
+            return self._rows[i]
+        return None
+
+    def _row_one_line(self, r: dict) -> str:
+        """把一条记录压成一行文字（复制到聊天 / 记事本里能直接读）"""
+        ts = int(r.get("ts_ms") or 0)
+        when = (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts / 1000.0))
+                + ".%03d" % (ts % 1000)) if ts else "-"
+        names = [s for s in str(r.get("fans") or "").split("|") if s.strip()]
+        return "%s　%s　%d 番　%s" % (
+            when, str(r.get("ip") or "-"), int(r.get("total_fan") or 0),
+            "、".join(names) or "-")
+
+    def _copy(self, text: str, what: str) -> None:
+        """复制一段文字到剪贴板，并在窗口底部说一声（免得不知道复制上没有）"""
+        txt = str(text or "")
+        if not txt:
+            self.lbl_tip.setText("没有可复制的%s。" % what)
+            return
+        try:
+            QApplication.clipboard().setText(txt)
+        except Exception as exc:           # noqa: BLE001
+            sys.stderr.write("[ui] 复制失败：%r\n" % (exc,))
+            self.lbl_tip.setText("复制失败（见 stderr 日志）。")
+            return
+        self.lbl_tip.setText("已复制%s：%s" % (what, txt[:60]))
+
+    def _detail_menu(self, pos) -> None:
+        """明细表右键：复制这一条 / 复制番种 / 编辑这一条 / 删除这一条 / 删这一天"""
+        r = self._menu_row(pos)
+        menu = QMenu(self)
+        if r is None:
+            act0 = menu.addAction("复制 / 删除…（先在表里点一行）")
+            act0.setEnabled(False)
+            menu.exec(self.tbl.mapToGlobal(pos))
+            return
+        act1 = menu.addAction("复制这一条（时间 + IP + 番数 + 番种）")
+        act1.triggered.connect(
+            lambda _c=False, _r=r: self._copy(self._row_one_line(_r), "这一条记录"))
+        act2 = menu.addAction("复制番种")
+        act2.triggered.connect(
+            lambda _c=False, _r=r: self._copy(_fans_brief(_r.get("fans")), "番种"))
+        menu.addSeparator()
+        act3 = menu.addAction("编辑这一条…")
+        act3.triggered.connect(lambda _c=False, _r=r: self._edit_row(_r))
+        act4 = menu.addAction("删除这一条…")
+        act4.triggered.connect(lambda _c=False, _r=r: self._delete_row(_r))
+        menu.addSeparator()
+        day = str(r.get("day") or "") or str(self.day or "")
+        if day:
+            act5 = menu.addAction("删除 %s 这一天的全部记录…" % day)
+            act5.triggered.connect(lambda _c=False, _d=day: self._delete_day(_d))
+        menu.exec(self.tbl.mapToGlobal(pos))
+
+    def _edit_row(self, r: dict) -> None:
+        """改这一条（复用统计页那个小对话框；改完就地刷新 + 顺手通知主窗口）"""
+        rid = int(r.get("id") or 0)
+        if not rid or self.stats is None:
+            return
+        dlg = StatsEditDialog(self, r)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        ok = self.stats.update_row(rid, **dlg.values())
+        if not ok:
+            QMessageBox.warning(self, "逐手明细", "没改成（记录可能已被别处删掉）。")
+        self._refresh()
+        w = self._win()
+        if w is not None:
+            try:
+                w._stats_refresh(force=True)
+            except Exception:              # noqa: BLE001
+                pass
+
+    def _delete_row(self, r: dict) -> None:
+        """删这一条（先确认，不可撤销）"""
+        rid = int(r.get("id") or 0)
+        if not rid or self.stats is None:
+            return
+        ans = QMessageBox.question(
+            self, "删除这一条",
+            "确定删掉这一条？\n\n%s\n\n删了就没了，不能撤销。" % self._row_one_line(r),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if ans != QMessageBox.Yes:
+            return
+        ok = self.stats.delete_row(rid)
+        if not ok:
+            QMessageBox.warning(self, "逐手明细", "没删掉（记录可能已被别处删掉）。")
+        self._refresh()
+        w = self._win()
+        if w is not None:
+            try:
+                w._stats_refresh(force=True)
+                w._stats_init_days()
+            except Exception:              # noqa: BLE001
+                pass
+
+    def _delete_day(self, day: str) -> None:
+        """删这一整天的记录（交给主窗口那套确认 / 提示，口径保持一致）"""
+        w = self._win()
+        if w is not None and hasattr(w, "_stats_delete_day"):
+            w._stats_delete_day(day)
+            self._refresh()
+            return
+        if self.stats is None:
+            return
+        ans = QMessageBox.question(
+            self, "删除这一天的记录",
+            "确定把 %s 这一天的算番记录全部删掉？\n\n"
+            "这个操作不可撤销，昵称不会释放（别的日子还留着这个名字）。" % day,
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if ans != QMessageBox.Yes:
+            return
+        self.stats.delete_day(day)
+        self._refresh()
 
     def _win_cols(self) -> List[str]:
         """沿父窗口链找主窗口的 `detail_cols`；拿不到就全列（明细不能因此崩）
@@ -3404,17 +5073,88 @@ class StatsDetailDialog(QDialog):
         self.tbl.setColumnCount(len(self.cols))
         self.tbl.setHorizontalHeaderLabels(
             [self.COL_LABELS.get(k, k) for k in self.cols])
+        self._reapply_col_modes()
+        self._refresh()
+        self._sync_col_button()            # ★ v2.9.23：按钮上的列数跟着变
+
+    # ---- ★ v2.9.23：窗口内选列（与统计页那两个按钮同一套口径）
+    def _win(self):
+        """沿父窗口链找主窗口（判定依据：它有 `_set_detail_cols`）
+
+        这样就不必关心这个窗口的 parent 是统计窗口还是主窗口。
+        """
+        w = self.parent()
+        for _ in range(4):
+            if w is None:
+                break
+            if hasattr(w, "_set_detail_cols"):
+                return w
+            w = w.parent() if hasattr(w, "parent") else None
+        return None
+
+    def _sync_col_button(self) -> None:
+        b = getattr(self, "btn_cols", None)
+        if b is not None:
+            b.setText("明细表列 ▾（%d）" % len(self.cols))
+
+    def _fill_col_menu(self) -> None:
+        """点开按钮时现填菜单（勾选状态永远跟当前列一致）"""
+        menu = self._menu_cols
+        cur = set(self.cols)
+        menu.clear()
+        for key, label in DETAIL_COL_ITEMS_:
+            act = menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(key in cur)
+            act.triggered.connect(lambda _c=False, _k=key: self._toggle_col(_k))
+        menu.addSeparator()
+        a_all = menu.addAction("全选")
+        a_all.triggered.connect(
+            lambda _c=False: self._set_cols([k for k, _ in DETAIL_COL_ITEMS_]))
+        a_def = menu.addAction("恢复默认")
+        a_def.triggered.connect(
+            lambda _c=False: self._set_cols(list(DETAIL_COLS_DESKTOP_DEFAULT_)))
+        a_web = menu.addAction("手机常用（%d 列）" % len(DETAIL_COLS_WEB_DEFAULT_))
+        a_web.triggered.connect(
+            lambda _c=False: self._set_cols(list(DETAIL_COLS_WEB_DEFAULT_)))
+
+    def _toggle_col(self, key: str) -> None:
+        """增删一列（至少留一列；加列按 DETAIL_COL_ITEMS_ 的定义顺序重排）"""
+        cur = list(self.cols)
+        if key in cur:
+            if len(cur) <= 1:
+                return                        # 至少留一列，否则表就空了
+            cur = [k for k in cur if k != key]
+        else:
+            want = set(cur) | {key}
+            cur = [k for k, _ in DETAIL_COL_ITEMS_ if k in want]
+        self._set_cols(cur)
+
+    def _set_cols(self, cols) -> None:
+        """改列 → 同步给主窗口（归一化 + 同步 Web + 落盘）→ 本窗口立刻重建
+
+        为什么不能只 rebuild 自己：`detail_cols` 的真身在主窗口，只改本地等于「看着变了、
+        下次打开又回原样」，手机端也不会跟着变。
+        """
+        win = self._win()
+        if win is None:
+            self.rebuild_columns(cols)        # 找不到主窗口：至少本窗口能看
+            return
+        win._set_detail_cols(cols)            # noqa: SLF001
+        if list(self.cols) != list(win.detail_cols):
+            # 模态窗口下主窗口对 _detail_dlg 的刷新可能是空转，这里兜底重建
+            self.rebuild_columns(win.detail_cols)
+
+    def _reapply_col_modes(self) -> None:
+        """按当前列清单设列宽模式（★ v2.9.20：静默填表填完要再调一次）"""
         hh = self.tbl.horizontalHeader()
         for c, k in enumerate(self.cols):
             # 「番种」「UA」这类长文本列吃掉剩余宽度；其余按内容撑宽
             if k in ("fans", "ua"):
                 mode = QHeaderView.Stretch
-            elif k in self.WIDE_COLS:
-                mode = QHeaderView.ResizeToContents
             else:
                 mode = QHeaderView.ResizeToContents
             hh.setSectionResizeMode(c, mode)
-        self._refresh()
 
     def _refresh(self) -> None:
         if self.stats is None:
@@ -3433,14 +5173,19 @@ class StatsDetailDialog(QDialog):
         self.lbl_fans.setText(
             "番种：" + "、".join("%s×%d" % (n, c) for n, c in fans) if fans
             else "番种：（没有番种记录）")
-        self.tbl.setRowCount(len(rows))
-        for i, r in enumerate(rows):
-            for c, k in enumerate(self.cols):
-                item = QTableWidgetItem(self._cell_text(k, r))
-                tip = self._cell_tip(k, r)
-                if tip:
-                    item.setToolTip(tip)
-                self.tbl.setItem(i, c, item)
+        self._rows = list(rows)            # ★ v2.9.28：右键要按 id 找到是哪一条
+        def fill() -> None:
+            self.tbl.setRowCount(len(rows))
+            for i, r in enumerate(rows):
+                for c, k in enumerate(self.cols):
+                    item = QTableWidgetItem(self._cell_text(k, r))
+                    tip = self._cell_tip(k, r)
+                    if tip:
+                        item.setToolTip(tip)
+                    self.tbl.setItem(i, c, item)
+
+        # ★ v2.9.20：静默填表（同统计页，明细上千行时尤其明显）
+        fill_table_quiet(self.tbl, fill, self._reapply_col_modes)
 
     # ---- 单元格取值（★ v2.9.10：按列 key 取，不再写死 8 列）
     def _cell_text(self, key: str, r: dict) -> str:

@@ -37,7 +37,8 @@
 
 ★ Web 版界面布局与桌面版一致（v2.4.4，改 Web 布局请先看桌面版怎么排）：
     ① 牌选择区（索 / 筒 / 万 / 字牌 四行，点一下加一张、长按或右键减一张；
-       ★ v2.8.0：红色数字只显示「已选张数」，点它不再减牌）
+       ★ v2.8.0：圆点只显示张数，点它不再减牌；
+       ★ v2.9.18：一张牌跨几类就并排几个彩色圆点（立牌红/暗杠紫/明杠橙/碰蓝/吃绿/胡牌金））
     ② 模式行（★ v2.9.5：重置 + 立牌/吃/碰/明杠/暗杠，重置在最左边；重置 = 全部复位；
        ★ v2.8.0：再点一次当前模式按钮 = 取消该模式，回到「立牌」；★ 重置要建在模式按钮之前）
     ③ 选项区固定四行：□自摸 □和绝张 □抢杠和/杠上开花 □海底捞月/妙手回春 ／
@@ -126,12 +127,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
-from mahjong_core import (MahjongFanCalculator, Meld, Options, TILE_CODES,  # noqa: E402
-                          VOICE_DIR_NAME, VOICE_SET_DEFAULT, VoicePlayer, code_of,
-                          count_voice_clips, find_voice_dir, name_of, num_of, readout_info,
-                          resolve_voice_dir, suit_of, tile_of, voice_name_ok,
-                          voice_set_label, voice_set_names, voice_set_of, voice_set_ok,
-                          voice_sets)
+from mahjong_core import (BADGE_COLORS, BADGE_DARK_TEXT, BADGE_ORDER,  # noqa: E402
+                          BADGE_TEXTS, MahjongFanCalculator, Meld, Options,
+                          TILE_CODES, VOICE_DIR_NAME, VOICE_SET_DEFAULT, VoicePlayer,
+                          all_badges, code_of, count_voice_clips, find_voice_dir,
+                          name_of, num_of, readout_info, resolve_voice_dir, suit_of,
+                          tile_of, voice_name_ok, voice_set_label, voice_set_names,
+                          voice_set_of, voice_set_ok, voice_sets)
 
 APP_NAME = "国标麻将算番器"
 # ★ v2.9.7：Web 客户端（手机/平板/浏览器）的标题 —— 与桌面端区分开
@@ -546,6 +548,31 @@ DETAIL_COLS_DESKTOP_DEFAULT = DETAIL_COL_KEYS
 # ★ v2.9.12：明细列第一次有新列要补（老用户升级后自动勾上，不勾就永远看不到）
 DETAIL_COL_NEW_KEYS = ("nick", "os", "browser", "dev")
 
+# ★ v2.9.22：桌面端「统计」页最下面那张「最近记录」表显示哪几列 ——
+#   这张表**只有桌面端有**（Web 统计弹窗只有「按人聚合 + 逐手明细」两张），
+#   所以这套 key 不参与「电脑端统一下发给手机」，只存在桌面设置里。
+#   以前这 8 列是写死在 _build_stats_page 里的，v2.9.22 起可勾选。
+REC_COL_ITEMS = (
+    ("time",    "时间"),
+    ("nick",    "昵称"),
+    ("ctype",   "客户端"),
+    ("user",    "用户"),
+    ("os",      "系统"),
+    ("browser", "浏览器"),
+    ("dev",     "设备型号"),
+    ("ip",      "IP"),
+    ("ua",      "UA（设备）"),
+    ("fan",     "番数"),
+    ("base",    "起番"),
+    ("reach",   "达标"),
+    ("fans_n",  "番种数"),
+    ("fans",    "番种"),
+)
+REC_COL_KEYS = tuple(k for k, _ in REC_COL_ITEMS)
+# 默认＝原来写死的那 8 列，顺序也照旧（升级后第一眼看到的和以前一模一样）
+REC_COLS_DEFAULT = ("time", "nick", "ctype", "fan", "base", "reach",
+                    "fans_n", "fans")
+
 
 def _cols_normalize(val, keys, default) -> tuple:
     """列序规整的**唯一实现**（统计列 / 明细列共用）：去非法、去重、保序。
@@ -565,7 +592,13 @@ def _cols_normalize(val, keys, default) -> tuple:
 
 
 def _cols_new_merged(val, keys, default, new_keys) -> tuple:
-    """老设置 + 新增列：把用户没见过的**新列**补到末尾（统计列 / 明细列共用）"""
+    """★ v2.9.24 起已废弃：主程序不再调它，也不要再新调。
+
+    原意：老设置 + 新增列，把用户没见过的新列补到末尾。
+    真实后果：它分不清「用户主动勾掉」与「老版本没这个字段」，
+    于是把用户刚删掉的列在下次启动又补回来（设置存不住）。
+    保留函数只为兼容旧脚本；主程序一律用 normalize。
+    """
     cur = list(_cols_normalize(val, keys, default))
     for k in new_keys:
         if k in keys and k not in cur:
@@ -583,6 +616,11 @@ def detail_cols_normalize(val, default=DETAIL_COLS_WEB_DEFAULT) -> tuple:
     return _cols_normalize(val, DETAIL_COL_KEYS, default)
 
 
+def rec_cols_normalize(val, default=REC_COLS_DEFAULT) -> tuple:
+    """把任意输入规整成合法的**最近记录列**序（★ v2.9.22）"""
+    return _cols_normalize(val, REC_COL_KEYS, default)
+
+
 def stats_cols_new_merged(val, default=STATS_COLS_DESKTOP_DEFAULT,
                           new_keys=STATS_COL_NEW_KEYS) -> tuple:
     """★ v2.9.9：老设置 + 新增列 —— 把用户没见过的**新列**补到末尾
@@ -591,15 +629,14 @@ def stats_cols_new_merged(val, default=STATS_COLS_DESKTOP_DEFAULT,
     「番种」列永远不出现，等于新功能白做。但也不能无脑用默认值覆盖 —— 那会
     把用户自己勾掉的列又勾回来。所以只补「新版本才有的 key」，且补到末尾。
 
-    ★ 用户**主动勾掉过**的情况无法区分（存下来的都是"不在列表里"），这一点
-      在文档里写明了：新列首次出现默认给用户看，不想要再勾掉一次即可。
+    ★ v2.9.24：主程序已不再调用本函数（见 _cols_new_merged 的说明）。
     """
     return _cols_new_merged(val, STATS_COL_KEYS, default, new_keys)
 
 
 def detail_cols_new_merged(val, default=DETAIL_COLS_DESKTOP_DEFAULT,
                            new_keys=DETAIL_COL_NEW_KEYS) -> tuple:
-    """★ v2.9.10：老设置 + 明细新增列（当前没有新增列，保留给以后加列用）"""
+    """★ v2.9.10 旧接口；★ v2.9.24 起主程序不再调用。"""
     return _cols_new_merged(val, DETAIL_COL_KEYS, default, new_keys)
 
 WEB_CLIENT = r"""<!doctype html>
@@ -614,6 +651,8 @@ WEB_CLIENT = r"""<!doctype html>
 <title>__APP_TITLE__</title>
 <style>
 :root{--blue:#2f7ff0;--bg:#f4f6fa;--card:#fff;--line:#dde3ec;--grey:#6b7684;--red:#e74c3c;
+ /* ★ v2.9.25：按钮专用「危险色」—— 跟牌区语义色 --red 分开，改它不会影响牌面圆点/番数 */
+ --danger:#c0392b;--danger-dk:#a93226;
  /* ★ v2.7.0 牌尺寸全部改成变量：这组默认值 = 「布局：38px（默认）」，
     与老版本逐个像素一致（38/52、34/46、28/38、间距 3/4）；
     ★ v2.8.4 起其余档位由 JS 按 W/38 **等比缩放这 12 个值**（不再看屏幕），
@@ -679,7 +718,13 @@ main{padding:10px 10px 120px;max-width:760px;margin:0 auto}
 button{font:inherit;font-size:var(--btn-fs);border:1px solid var(--line);background:#fff;
  border-radius:8px;padding:var(--btn-pad-y) var(--btn-pad-x);cursor:pointer}
 button.on{background:var(--blue);border-color:var(--blue);color:#fff}
-button.warn{background:#fff3e6;border-color:#f0c08a}
+/* ★ v2.9.25：「重置」是**破坏性**按钮，做成红底白字、明显比旁边的模式按钮更「烫手」——
+   以前是浅橙底深橙字，跟蓝色「立牌」挨在一起，手机小屏上老点错 —— 清空整手牌的操作不能离模式按钮这么像。
+   白字在 --danger(#c0392b) 上对比度 5.44:1，达到 WCAG AA 正文标准；
+   hover/active 再压深一档（#a93226，6.62:1），按下有明确的视觉反馈。 */
+button.warn{background:var(--danger);border-color:var(--danger);color:#fff;font-weight:700}
+button.warn:hover{background:var(--danger-dk);border-color:var(--danger-dk)}
+button.warn:active{background:var(--danger-dk);border-color:var(--danger-dk)}
 button:active{transform:translateY(1px)}
 /* ★ v2.7.9：页面不足一屏时「跳转」按钮置灰；被跳转到的区块闪一下边框作为反馈 */
 button:disabled{opacity:.45;cursor:default}
@@ -701,14 +746,19 @@ select{font:inherit;font-size:var(--btn-fs);border:1px solid var(--line);backgro
  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
 .tile img{width:calc(var(--tw) - 6px);height:calc(var(--th) - 8px);pointer-events:none}
 .tile.sel{border-color:var(--blue);background:#eaf2ff}
-/* ★ v2.8.0：红色数字只显示「已选张数」，不再可点 —— pointer-events:none 让点击落到牌上。
-   以前它是「−1」减牌按钮，但红圈太像删除键，误触一下手牌就少一张，所以这个操作已取消。 */
-.tile .cnt{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;
- background:var(--red);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center;
- padding:0 3px;pointer-events:none;box-shadow:0 0 0 2px #fff}
+/* ★ v2.8.0：圆点只显示张数，不再可点 —— pointer-events:none 让点击落到牌上。
+   以前它是「−1」减牌按钮，但圆点太像删除键，误触一下手牌就少一张，所以这个操作已取消。
+   ★ v2.9.18：一张牌可能同时是立牌 + 碰 + 胡牌 …… 所以改成**一列彩色圆点**：
+   每类一个圆点、各显示自己的张数，颜色/顺序/文案与桌面版同源（mahjong_core.BADGE_*，
+   由服务端注入成 BADGE_ORDER / BADGE_COLORS / BADGE_TEXTS）。圆点仍然只显示张数、
+   不再减牌。容器 44px 宽 ⇒ 一行最多 2 个，再多自动换第二排。 */
+.tile .bds{position:absolute;top:-5px;right:-5px;display:flex;flex-wrap:wrap;justify-content:flex-end;
+ gap:1px;width:calc(var(--tw) + 6px);pointer-events:none}
+.tile .bd{width:20px;height:20px;border-radius:50%;background:var(--red);color:#fff;
+ font-size:11px;font-weight:700;line-height:20px;text-align:center;
+ box-shadow:0 0 0 2px #fff;pointer-events:none}
 .tiles img.clk{cursor:pointer}
 .tiles img.clk:active{opacity:.55}
-.tile .cnt.hide{display:none}
 /* ★ 牌池每行必须横排（索/筒/万/字牌 4 行，每行 9/9/9/7 张）——
    不能只靠祖先 .pool 类（v2.4.4 漏过一次：类名没带上，结果每张牌各占一行） */
 #pool .line,.pool .line{display:flex;gap:var(--pgap);flex-wrap:wrap;margin:0 0 3px}
@@ -746,11 +796,8 @@ footer select{max-width:42vw}
  border:1px solid var(--line);border-bottom-color:#eef3fb}
 .tabpane{display:none}
 .tabpane.show{display:block}
-/* ★ v2.9.7：设置里「统计列」的勾选区（一列两个，窄屏自动折行） */
-.colswrap{display:flex;flex-wrap:wrap;gap:6px 14px;flex:1;min-width:0}
-.colswrap label{display:inline-flex;align-items:center;gap:5px;font-size:13px;
- cursor:pointer;white-space:nowrap}
-.colswrap input{width:16px;height:16px;cursor:pointer}
+/* ★ v2.9.29：原来这里有一组 .colswrap 样式，给设置弹窗里「统计列 / 明细列」的
+   只读勾选框用。那两块勾选区已整块撤掉，样式跟着删 —— 留着也是死代码。 */
 </style></head><body>
 <header>
   <!-- ★ v2.9.7：「布局 / 按键」从底栏搬到顶栏左侧，标题居中 -->
@@ -813,7 +860,10 @@ footer select{max-width:42vw}
     <div class="tip" style="margin-top:6px">
       手机：点牌加一张；<b>点错了不用「重置」</b>，「已选牌」里那一块都能点掉 ——
       点<b>立牌</b>一张减一张、点<b>副露</b>一张撤销那一组（吃/碰/杠）、点<b>和张</b>取消和张、
-      点<b>花牌</b>行取消那张（牌上的红色数字只是「已选张数」，点它不再减牌）。
+      点<b>花牌</b>行取消那张（牌上的圆点只是张数，点它不再减牌；
+      颜色区分类别：<b style="color:#e74c3c">立牌</b> / <b style="color:#8e44ad">暗杠</b> /
+      <b style="color:#e67e22">明杠</b> / <b style="color:#2f7ff0">碰</b> /
+      <b style="color:#27ae60">吃</b> / <b style="color:#b7950b">胡牌</b>）。
       立牌满 13 张（有副露时 13 − 3×副露数）会自动列出听牌；点牌池里的牌或候选牌即可出结果。
     </div>
   </div>
@@ -855,23 +905,14 @@ footer select{max-width:42vw}
   <div class="row"><div class="lb"></div>
     <span id="nickhint" class="tip"></span>
   </div>
-  <!-- ★ v2.9.7：统计面板显示哪些列（只影响这台设备） -->
-  <div class="row" style="align-items:flex-start">
-    <div class="lb">统计列</div>
-    <div id="statcolswrap" class="colswrap"></div>
-  </div>
-  <!-- ★ v2.9.10：逐手明细显示哪些列（只影响这台设备） -->
-  <div class="row" style="align-items:flex-start">
-    <div class="lb">明细列</div>
-    <div id="detailcolswrap" class="colswrap"></div>
-  </div>
+  <!-- ★ v2.9.29：统计列 / 明细列由**电脑端统一管理**，本机勾不动、改了也不算数，
+       所以这两块只读勾选区整块撤掉 —— 手机上设置弹窗短一大截 -->
   <div class="tip">
     「读番」＝把「合计 N 番」念出来（音频在电脑端《数字》目录里，手机自己出声）。<br>
     「语音」＝读番用哪一套录音，默认「女声」；电脑端「设置 → 通用 → 语音包」改的是它的默认值。<br>
     「昵称」＝这台设备在统计里叫什么（只认人用，随便填；重名会自动加 #2）。<br>
-    「统计列」＝点「统计」后表格里显示哪几列，勾了立刻生效。<br>
-    「明细列」＝在统计里点某个人展开的「逐手明细」显示哪几列。<br>
-    这里选的都只记在<b>这台设备</b>上，刷新、下次打开都还在。<br>
+    「统计列」「明细列」＝<b>由电脑端统一设置</b>（这里不再列出来，也没必要列）。<br>
+    想增减列 / 调整顺序，请去电脑端「设置 → 统计列」勾选 —— 改完<b>所有手机、平板下次打开（刷新）都跟着变</b>。<br>
     <span style="opacity:.8">注：「系统 / 浏览器 / 设备型号」是从浏览器自报的 UA 里读的 ——
     安卓 16+ 与鸿蒙的型号浏览器不再提供，所以「设备型号」可能显示「-」，属正常。</span>
   </div>
@@ -933,6 +974,13 @@ const POOL=[["T1","T2","T3","T4","T5","T6","T7","T8","T9"],
 /* ★ 花牌不在牌池里：与桌面版一致，放在**选项区第 4 行**（点一下选/再点取消） */
 const FLOWER=["S1","S2","S3","S4","P1","P2","P3","P4"];
 const MODES=[["stand","立牌"],["chi","吃"],["peng","碰"],["minggang","明杠"],["angang","暗杠"]];
+/* ★ v2.9.18：牌池彩色角标的颜色/顺序/文案 —— 与桌面版**同一份定义**
+   （mahjong_core.BADGE_ORDER / BADGE_COLORS / BADGE_TEXTS / BADGE_DARK_TEXT），
+   服务端渲染页面时注入。改颜色只改 mahjong_core.py，两端一起变，不要在这里写死。 */
+const BADGE_ORDER=__BADGE_ORDER__;
+const BADGE_COLORS=__BADGE_COLORS__;
+const BADGE_TEXTS=__BADGE_TEXTS__;
+const BADGE_DARK_TEXT=__BADGE_DARK_TEXT__;
 const ROUNDS=["东","南","西","北"];
 const NAMES={};["B","T","W"].forEach(s=>{for(let i=1;i<=9;i++)NAMES[s+i]=(i)+(s=="B"?"筒":s=="T"?"索":"万")});
 ["东","南","西","北"].forEach((n,i)=>NAMES["F"+(i+1)]=n);
@@ -1166,7 +1214,8 @@ function tap(code){
   if(/^[SP]/.test(code)){toggleFlower(code);return;}   /* 花牌：点一下选/再点取消 */
   if(S.mode=="chi"){chiTap(code);return;}
   if(S.mode!="stand"){meldFromPool(code);return;}
-  const used=(S.concealed[code]||0)+(S.win===code?1:0);
+  const used=countUsed(code);   /* ★ v2.9.30：必须含副露（吃逐张各 1、碰 3、杠 4），
+                                   以前只算立牌和张 → 吃 123 万后还能再摸进 5 张 */
   if(used>=4){flash("这种牌最多 4 张");return;}
   if(S.win){                       /* 已有和张：再点一张 = 换和张（点同一张则取消） */
     S.win=(S.win===code)?null:code;render();return;
@@ -1212,6 +1261,11 @@ function chiTap(code){
     const suit=S.pending[0][0];
     const sameSuit=S.pending.every(c=>c[0]===suit);
     if(sameSuit&&nums[0]+1===nums[1]&&nums[1]+1===nums[2]){
+      /* ★ v2.9.30：吃也是实牌。以前这里完全不查 4 张上限，
+         吃 123 万之后还能再杠 2 万 / 3 万，凑出 5 张。 */
+      if(S.pending.some(c=>countUsed(c)+1>4)){
+        flash("这种牌最多 4 张");S.pending=[];render();return;
+      }
       pushMeld("chi",S.pending.slice(),false);S.pending=[];
     }else{flash("吃需要 3 张同花色相连的牌");S.pending=[];}
   }
@@ -1224,7 +1278,7 @@ function countUsed(code){
   return n;
 }
 function chooseWin(code){
-  const n=(S.concealed[code]||0)+(S.win===code?1:0);
+  const n=countUsed(code);      /* ★ v2.9.30：同上，必须含副露 */
   if(n>=4&&S.win!==code){flash("这种牌最多 4 张");return;}
   S.win=(S.win===code)?null:code;render();
 }
@@ -1236,7 +1290,7 @@ function resetAll(){/* ★ 全部重置（与桌面版一致） */
   render();
 }
 /* 减一张（★ 手机友好入口：「已选牌」的立牌 / 和张行里点一张；
-   v2.8.0 起牌池上的红色数字不再可点） */
+   v2.8.0 起牌池上的圆点不再可点；v2.9.18 起按类别上色） */
 function minus(code){
   if(S.mode=="chi"&&S.pending.length){S.pending.pop();render();return;}
   if(S.win===code){S.win=null;render();return;}
@@ -1316,22 +1370,56 @@ let POOL_BUILT=false;
 function buildPool(){
   el("pool").innerHTML=POOL.map(row=>'<div class="line">'+row.map(code=>
     '<div class="tile" data-code="'+code+'">'+img(code)+
-    '<div class="cnt hide"></div></div>').join("")+'</div>').join("");
+    '<div class="bds"></div></div>').join("")+'</div>').join("");
   bindPool();
   POOL_BUILT=true;
 }
-/* ★ v2.8.0：红色角标不再绑定任何事件（只显示张数）——
+/* ★ v2.8.0：圆点不再绑定任何事件（只显示张数）——
    以前它是「−1」减牌按钮，红圈太像删除键、容易误触；现在点它＝点这张牌（加一张）。
-   CSS 里 .cnt 已设 pointer-events:none，事件自然落到 .tile 上。 */
+   CSS 里 .bds / .bd 已设 pointer-events:none，事件自然落到 .tile 上。 */
+/* ★ v2.9.18：一张牌可能同时属于多类（立牌/暗杠/明杠/碰/吃/胡牌），
+   **每类一个圆点、各显示自己的张数**，不合并。计数口径与桌面版同源：真值来自
+   mahjong_core.all_badges()，这里按同一规则在本地算一遍，点一下即时刷新不用等服务器。 */
+function poolBadges(code){
+  const m={};
+  const add=(k,n)=>{ if(n>0) m[k]=(m[k]||0)+n; };
+  add("stand", S.concealed[code]||0);
+  if(S.mode=="chi") add("chi", S.pending.filter(c=>c===code).length);
+  (S.melds||[]).forEach(md=>{
+    const t=md.tiles||[];
+    if(!t.length) return;
+    if(md.kind=="kong"){ if(t[0]===code) add(md.concealed?"angang":"minggang", t.length); }
+    else if(md.kind=="pong"){ if(t[0]===code) add("peng", t.length); }
+    else if(md.kind=="chi"){ add("chi", t.filter(c=>c===code).length); }
+  });
+  if(S.win===code) add("win", 1);
+  return m;
+}
+function badgeHtml(m){
+  const kinds=BADGE_ORDER.filter(k=>(m[k]||0)>0);
+  if(!kinds.length) return "";
+  const size=kinds.length==1?20:(kinds.length==2?16:13);
+  const font=size>=20?11:(size>=16?10:9);
+  return kinds.map(k=>{
+    const dark=(BADGE_DARK_TEXT||[]).indexOf(k)>=0;
+    return '<span class="bd" data-kind="'+k+'" title="'+esc(BADGE_TEXTS[k]||k)+'"'
+      +' style="width:'+size+'px;height:'+size+'px;line-height:'+size+'px;font-size:'+font+'px;'
+      +'background:'+(BADGE_COLORS[k]||"#e74c3c")+';color:'+(dark?"#333":"#fff")+'">'
+      +m[k]+'</span>';
+  }).join("");
+}
 function updatePool(){
   if(!POOL_BUILT){buildPool();return;}
   document.querySelectorAll("#pool .tile").forEach(node=>{
     const code=node.dataset.code;
-    const n=(S.concealed[code]||0)+(S.win===code?1:0)+
-            (S.mode=="chi"?S.pending.filter(c=>c===code).length:0);
-    node.classList.toggle("sel", n>0||S.pending.includes(code));
-    const cnt=node.querySelector(".cnt");
-    if(cnt){ cnt.textContent=n; cnt.classList.toggle("hide", n===0); }
+    const m=poolBadges(code);
+    const any=Object.keys(m).length>0;
+    node.classList.toggle("sel", any||S.pending.includes(code));
+    const box=node.querySelector(".bds");
+    if(box){
+      const html=badgeHtml(m);
+      if(box.getAttribute("data-sig")!==html){ box.innerHTML=html; box.setAttribute("data-sig",html); }
+    }
   });
 }
 function bindPool(){
@@ -1577,8 +1665,9 @@ function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
 
 /* ---------- ★ v2.9.7：统计面板「显示哪些列」（可自定义） ----------
    STAT_COLS_DEF  = 全部可选列（服务端给，与桌面端同一套 key）
-   STAT_COLS_DEF0 = 服务端默认显示那几列（桌面端「设置 → 通用 → 统计显示列」）
-   本机在「设置」里勾过 → 存 localStorage，只影响这台设备；没勾过 → 用服务端那套。  */
+   STAT_COLS_DEF0 = 服务端当前生效的那几列（桌面端「设置 → 统计列」）
+   ★ v2.9.21：**只读** —— 以前本机勾选会存 localStorage 覆盖服务端，
+     现在一律以服务端为准（电脑端设一次、所有 Web 客户端统一）。  */
 const STAT_COLS_DEF=__STATS_COL_DEF__;
 const STAT_COLS_DEF0=__STATS_COL_DEFAULT__;
 const STATCOLS_KEY="mj_statscols";
@@ -1586,61 +1675,39 @@ const STATCOLS_KEY="mj_statscols";
 const DETAIL_COLS_DEF=__DETAIL_COL_DEF__;
 const DETAIL_COLS_DEF0=__DETAIL_COL_DEFAULT__;
 const DETAILCOLS_KEY="mj_detailcols";
-/* 一组列的「读 / 存 / 画勾 / 改动」逻辑完全一样，抽成一个工厂，避免复制两遍 */
-function colStore(key,def,def0){
+/* ★ v2.9.21：列由**电脑端统一管理** —— 这里只读。
+   以前本机在「设置」里勾选会存 localStorage 覆盖服务端，
+   结果「电脑端改了——手机不变」；现在一律以服务端下发的 def0 为准。 */
+
+/* 一次性清掉老版本留下的本机覆盖，免得用户以为「我明明改过」 */
+function purgeColOverride(){
+  try{localStorage.removeItem(STATCOLS_KEY);}catch(e){}
+  try{localStorage.removeItem(DETAILCOLS_KEY);}catch(e){}
+}
+/* ★ v2.9.29：本机已经没有任何「自定义列」的入口了（设置里的两个只读勾选区已撤掉），
+   这里只需要一个「当前生效是哪几列」的取值器，不再需要 key / save / render。
+   参数名 def / def0 沿用老叫法，免得调用处一大堆名字要跟着改。 */
+function colStore(def,def0){
   return {
     get:function(){
-      try{const v=localStorage.getItem(key);
-        if(v){const a=JSON.parse(v);
-          if(Array.isArray(a)){const ok=a.filter(k=>def.some(d=>d.k===k));
-            if(ok.length)return ok;}}}catch(e){}
-      return def0.slice();
+      const a=(def0||[]).slice();
+      const ok=a.filter(k=>def.some(d=>d.k===k));
+      return ok.length?ok:def.map(d=>d.k);
     },
-    save:function(a){try{localStorage.setItem(key,JSON.stringify(a));}catch(e){}},
-    render:function(wrapId,onchg){
-      const w=el(wrapId); if(!w)return;
-      const cur=this.get();
-      w.innerHTML=def.map(d=>
-        '<label><input type="checkbox" data-k="'+esc(d.k)+'"'
-        +(cur.indexOf(d.k)>=0?" checked":"")+' onchange="'+onchg+'()">'
-        +esc(d.n)+'</label>').join("");
-    },
-    /* 返回本次勾选结果；一列都没勾时返回 null（调用方负责把兜底列勾回来） */
-    changed:function(wrapId){
-      const w=el(wrapId); if(!w)return null;
-      const a=[];
-      w.querySelectorAll("input[data-k]").forEach(i=>{
-        if(i.checked)a.push(i.getAttribute("data-k"));});
-      if(!a.length)return null;
-      this.save(a);
-      return a;
-    }
   };
 }
-const STATC=colStore(STATCOLS_KEY,STAT_COLS_DEF,STAT_COLS_DEF0);
-const DETAILC=colStore(DETAILCOLS_KEY,DETAIL_COLS_DEF,DETAIL_COLS_DEF0);
+const STATC=colStore(STAT_COLS_DEF,STAT_COLS_DEF0);
+const DETAILC=colStore(DETAIL_COLS_DEF,DETAIL_COLS_DEF0);
 function statCols(){return STATC.get();}
-function saveStatCols(a){STATC.save(a);}
 function detailCols(){return DETAILC.get();}
-function renderStatColBoxes(){STATC.render("statcolswrap","onStatColChange");}
-function renderDetailColBoxes(){DETAILC.render("detailcolswrap","onDetailColChange");}
-function onStatColChange(){
-  /* 至少留一列：一列都不勾表格就全白，等于把功能弄坏了 */
-  if(!STATC.changed("statcolswrap")){renderStatColBoxes();return;}
-  buildStatHead();
-  if(el("statsdlg").classList.contains("show"))loadStats();
-}
-function onDetailColChange(){
-  /* 明细至少留「时间」——没有时间就不叫「逐手」记录了 */
-  const a=DETAILC.changed("detailcolswrap");
-  if(!a){renderDetailColBoxes();return;}
-  if(DETAIL_UK)openDetail(DETAIL_UK);      /* 明细正开着 → 立刻按新列重画 */
-}
 function buildStatHead(){
   const h=el("stathead"); if(!h)return;
   const cur=statCols();
-  h.innerHTML=STAT_COLS_DEF.filter(d=>cur.indexOf(d.k)>=0)
-    .map(d=>"<th>"+esc(d.n)+"</th>").join("");
+  /* ★ v2.9.24：表头必须按 cur 的顺序画 —— 以前按 STAT_COLS_DEF 的定义顺序，
+     而单元格按 cur 顺序，两者只要不同就会错列。
+     现在两边都只认 cur，名字按 key 查字典（查不到就退回 key）。 */
+  h.innerHTML=cur.map(k=>{const d=STAT_COLS_DEF.find(x=>x.k===k)||{n:k};
+    return "<th>"+esc(d.n)+"</th>";}).join("");
 }
 function statCell(k,u){
   switch(k){
@@ -1753,11 +1820,13 @@ function detailHtml(j){
     h+='<div class="tip">这个人打出的番种：'
       +j.fans.map(f=>esc(f.name)+"×"+f.cnt).join("、")+'</div>';
   if(!rows.length){h+='<div class="tip">没有明细记录。</div>';return h;}
-  /* ★ v2.9.10：只画「设置 → 明细列」里勾上的那几列 */
+  /* ★ v2.9.10：只画「设置 → 明细列」里勾上的那几列
+     ★ v2.9.24：表头**按 cur 的顺序**画（以前按 DETAIL_COLS_DEF 定义顺序，
+     与下面按 cur 画的单元格不一致就会错列） */
   const cur=detailCols();
   h+='<div style="max-height:240px;overflow:auto"><table><thead><tr>'
-    +DETAIL_COLS_DEF.filter(d=>cur.indexOf(d.k)>=0)
-      .map(d=>"<th>"+esc(d.n)+"</th>").join("")
+    +cur.map(k=>{const d=DETAIL_COLS_DEF.find(x=>x.k===k)||{n:k};
+      return "<th>"+esc(d.n)+"</th>";}).join("")
     +'</tr></thead><tbody>';
   rows.forEach(r=>{
     h+='<tr>'+cur.map(k=>"<td>"+detailCell(k,r)+"</td>").join("")+'</tr>';
@@ -1840,8 +1909,8 @@ function seedLive(){
   applyBtnSize(loadBtnSize(),false);   /* ★ v2.7.6 恢复上次的按键大小（默认「最小」＝老样子）；内部会填下拉框 */
   loadSpeak();markSpeak();             /* ★ v2.9.0 恢复「读番」开关（默认关） */
   loadVoicePack();                     /* ★ v2.9.3 恢复「语音包」选择（默认服务器端那套） */
-  renderStatColBoxes();buildStatHead();/* ★ v2.9.7 恢复「统计列」勾选 + 生成表头 */
-  renderDetailColBoxes();             /* ★ v2.9.10 恢复「明细列」勾选 */
+  purgeColOverride();                 /* ★ v2.9.21 清掉老版本的本机列覆盖 */
+  buildStatHead();                     /* ★ v2.9.29 列勾选框已撤，只按当前生效列生成表头 */
   /* ★ v2.9.9：统计表用**事件委托**接点击（行是后画的，不能逐个绑） */
   {const sb=el("statbody"); if(sb&&sb.addEventListener)sb.addEventListener("click",statRowClick);}
   updateJumpBtns();                    /* ★ v2.7.9 底部跳转按钮：没得滚就置灰 */
@@ -1938,6 +2007,12 @@ def render_web_client(app_name: str = APP_NAME, show=(), speak_default: bool = T
     html = html.replace("__SHOW_DEBUG__", "" if "debug" in on else "display:none")
     html = html.replace("__SHOW_TOKEN__", "" if "token" in on else "display:none")
     html = html.replace("__SPEAK_DEFAULT__", "true" if speak_default else "false")
+    # ★ v2.9.18：牌池彩色角标（立牌/暗杠/明杠/碰/吃/胡牌）的颜色与顺序 —— 与桌面版同源
+    #   ensure_ascii=True 让中文变成 \uXXXX 转义，塞进 <script> 里最安全（不会碰到引号/编码问题）
+    html = html.replace("__BADGE_ORDER__", json.dumps(list(BADGE_ORDER), ensure_ascii=True))
+    html = html.replace("__BADGE_COLORS__", json.dumps(dict(BADGE_COLORS), ensure_ascii=True))
+    html = html.replace("__BADGE_TEXTS__", json.dumps(dict(BADGE_TEXTS), ensure_ascii=True))
+    html = html.replace("__BADGE_DARK_TEXT__", json.dumps(list(BADGE_DARK_TEXT), ensure_ascii=True))
     packs = [str(s["name"]) if isinstance(s, dict) else str(s)
              for s in (voice_sets or ())]
     cur = resolve_voice_dir(voice_set, None)

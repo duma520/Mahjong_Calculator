@@ -148,6 +148,97 @@ def is_terminal_or_honor(tid: int) -> bool:
     return num_of(tid) in (1, 9)
 
 
+# ---------------------------------------------------------------- 角标（v2.9.18）
+# 牌选择区每张牌右上角的彩色小圆点：一张牌可能同时属于多类（立牌/暗杠/明杠/碰/吃/胡牌），
+# 每类一个圆点、各自一个数字，**不合并**。
+# ★ 桌面版与 Web 版共用这一份定义：Web 页面里的颜色/顺序/文案由 mahjong_api 注入 JS，
+#   所以改颜色、改顺序、加类别**只改这里**，两端一起变。
+
+BADGE_ORDER: Tuple[str, ...] = ("stand", "angang", "minggang", "peng", "chi", "win")
+
+BADGE_COLORS: Dict[str, str] = {
+    "stand": "#e74c3c",       # 立牌：红（与 v2.8.0 起的红角标同色）
+    "angang": "#8e44ad",      # 暗杠：紫
+    "minggang": "#e67e22",    # 明杠：橙
+    "peng": "#2f7ff0",        # 碰：蓝（与「已选」边框同色）
+    "chi": "#27ae60",         # 吃：绿
+    "win": "#f1c40f",         # 胡牌（和张）：金
+}
+
+BADGE_TEXTS: Dict[str, str] = {
+    "stand": "立牌",
+    "angang": "暗杠",
+    "minggang": "明杠",
+    "peng": "碰",
+    "chi": "吃",
+    "win": "胡牌",
+}
+
+# 金色底配白字看不清 ⇒ 这几类改用深色字（其余用白字）
+BADGE_DARK_TEXT: Tuple[str, ...] = ("win",)
+
+
+def _meld_value(meld, name, default=None):
+    """取副露的一个字段 —— 桌面版传 `Meld` 对象、Web 版可能传 dict，两种都认"""
+    if isinstance(meld, dict):
+        return meld.get(name, default)
+    return getattr(meld, name, default)
+
+
+def all_badges(concealed=None, melds=None, win_tile=None, pending_chi=()):
+    """汇总每张牌该显示的角标 → `{牌 id: {类别: 张数}}`（只含张数 > 0 的类别）
+
+    concealed   : 立牌 —— `{牌 id: 张数}` 或牌 id 序列（序列里每个算 1 张）
+    melds       : 副露 —— `Meld` 对象或 dict（字段 kind / tiles / concealed）
+    win_tile    : 和张的牌 id（有就记一张「胡牌」）
+    pending_chi : 正在拼的那一组吃（牌 id 序列），只在「吃」模式下传
+
+    张数口径（与 v2.8.0 起的红角标一致，前端直接拿来显示）：
+        立牌 = 手里有几张；碰 = 3；明杠 / 暗杠 = 4；吃 = 每张各 1；胡牌 = 1。
+    同一张牌跨多类时**分开记**（不合并），由前端并排画多个圆点。
+    """
+    out: Dict[int, Dict[str, int]] = {}
+
+    def bump(tid, kind: str, n: int = 1) -> None:
+        try:
+            tid = int(tid)
+            n = int(n)
+        except (TypeError, ValueError):
+            return
+        if n <= 0:
+            return
+        slot = out.setdefault(tid, {})
+        slot[kind] = slot.get(kind, 0) + n
+
+    if concealed:
+        pairs = (concealed.items() if hasattr(concealed, "items")
+                 else [(t, 1) for t in concealed])
+        for tid, n in pairs:
+            bump(tid, "stand", n)
+
+    for tid in pending_chi or ():
+        bump(tid, "chi", 1)
+
+    for meld in melds or ():
+        kind = str(_meld_value(meld, "kind", "") or "")
+        tiles = list(_meld_value(meld, "tiles", ()) or ())
+        if not tiles:
+            continue
+        if kind == "kong":
+            cat = "angang" if _meld_value(meld, "concealed", False) else "minggang"
+            bump(tiles[0], cat, len(tiles))
+        elif kind == "pong":
+            bump(tiles[0], "peng", len(tiles))
+        elif kind == "chi":
+            for tid in tiles:
+                bump(tid, "chi", 1)
+
+    if win_tile is not None:
+        bump(win_tile, "win", 1)
+
+    return out
+
+
 # ---------------------------------------------------------------- 数据结构
 
 

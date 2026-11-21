@@ -18,6 +18,9 @@
 设计要点（防御性编程 / 容错 / 不阻断主流程）：
   · 落库失败只写日志、返回 False，绝不抛异常影响算番
   · 同一手牌（相同 sig）2 秒内重复请求会去重，避免选项反复切换刷出大量脏数据
+  · ★ v2.9.26：2 秒到 10 分钟之间的同手牌重算，**就地改成最新结论**而不是再插一条
+    （以前一次实战能刷出二十几条同一手牌，把统计放大几十倍）；老记录无法回溯手牌
+    指纹，另给「历史重复清理」按时间窗归组、留番数最大那条
   · 每个 StatsDB 实例独占一个 sqlite 连接，配锁保证多线程写入安全
   · 老库升级：缺的列自动 ALTER 补上（fans / model / nick），历史数据不丢
 """
@@ -48,11 +51,35 @@ except Exception:                                          # noqa: BLE001
     def model_pretty(m) -> str:
         return str(m or "")
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 # 同一手牌去重窗口（毫秒）：2 秒内相同 sig 视为重复，跳过
 DEDUP_WINDOW_MS = 2000
+# ★ v2.9.26：同一手牌「只留一条」的合并窗口（毫秒）。
+#   手机端每改一个选项就会重算重报一次，sig（手牌指纹）不变但番数会变；
+#   窗口内同一个人同一手牌再算出来，就把已有那条改成最新结果，不再插新行。
+# ★ v2.9.27：默认窗口从 10 分钟收成 3 分钟 —— 实测一次算番折腾很少超过 3 分钟，
+#   收窄后「隔一会儿同一手牌真的又和了一次」能正常留成两条。
+#   另外这个行为本身做成可关的开关（桌面端「设置 → 统计列」页底部），关掉就退回
+#   v2.9.25 的「算一次记一条」，排查统计问题 / 交叉核对时用。
+SAME_HAND_UPSERT_MS = 180000
+# ★ v2.9.26：历史重复清理的默认时间窗（秒）。
+#   老记录没有 sig 列，只能按「同一天 + 同一个人 + 相邻记录间隔」归组；
+#   实测 120 秒能把 455 条压到 54 条，且保留每组番数最高那条。
+DEDUPE_DEFAULT_WINDOW_SEC = 120
 # ★ v2.9.9：score_log.fans 列里多个番种名的分隔符
 FANS_SEP = "|"
+
+
+def _warn(msg: str) -> None:
+    """统计库的告警只写 stderr，绝不抛给调用方。
+
+    ★ v2.9.19：统计是「附加功能」，任何时候坏了都不能连累算番主流程；
+      所以库内部所有异常统一走这里，调用方只收 False / 0 / 空列表。
+    """
+    try:
+        sys.stderr.write(str(msg) + "\n")
+    except Exception:                  # noqa: BLE001
+        pass
 
 
 def _day_local(ts_ms: int) -> str:
@@ -158,6 +185,9 @@ class StatsDB:
         self._lock = threading.Lock()
         self._dup_lock = threading.Lock()
         self._dup: Dict[str, int] = {}          # sig -> 上次写入的 ts_ms
+        # ★ v2.9.27：「同一手牌只留一条」的运行时策略（桌面端设置窗口可改，默认开）
+        self._merge_enabled: bool = True
+        self._merge_ms: int = int(SAME_HAND_UPSERT_MS)
         parent = os.path.dirname(os.path.abspath(path))
         if parent and not os.path.isdir(parent):
             try:
@@ -193,7 +223,8 @@ class StatsDB:
                     base        INTEGER NOT NULL DEFAULT 0,
                     reach       INTEGER NOT NULL DEFAULT 0,
                     fans_n      INTEGER NOT NULL DEFAULT 0,
-                    fans        TEXT    NOT NULL DEFAULT ''
+                    fans        TEXT    NOT NULL DEFAULT '',
+                    sig         TEXT    NOT NULL DEFAULT ''
                 )"""
             )
             self._conn.execute(
@@ -204,6 +235,9 @@ class StatsDB:
                 "CREATE INDEX IF NOT EXISTS idx_score_log_ts "
                 "ON score_log(ts_ms)"
             )
+            # ★ v2.9.26：按「手牌指纹」查最近一条的索引见下方 _ensure_column("sig")
+            #   之后 —— 老库这会儿还没有 sig 列，在这里建索引会直接抛
+            #   「no such column: sig」把整个建表流程带崩（踩过）。
             # ★ v2.9.12：昵称表。nick 做主键 —— 「一个名字只属于一个人」，
             #   重名靠这张表拦，规则见 set_nick()。
             self._conn.execute(
@@ -223,6 +257,18 @@ class StatsDB:
         self._ensure_column("fans", "TEXT NOT NULL DEFAULT ''")     # v2.9.9
         self._ensure_column("model", "TEXT NOT NULL DEFAULT ''")    # v2.9.12
         self._ensure_column("nick", "TEXT NOT NULL DEFAULT ''")     # v2.9.12
+        self._ensure_column("sig", "TEXT NOT NULL DEFAULT ''")      # v2.9.26
+        # ★ v2.9.26：按「手牌指纹」查最近一条（同手牌只留一条要靠它）。
+        #   必须放在 _ensure_column("sig") **之后** —— 老库这会儿才有 sig 列。
+        try:
+            with self._lock:
+                self._conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_score_log_sig "
+                    "ON score_log(sig, user_key, ts_ms)"
+                )
+                self._conn.commit()
+        except sqlite3.Error as exc:
+            _warn("[stats] 建 sig 索引失败：%r" % (exc,))
 
     def _ensure_column(self, name: str, decl: str) -> bool:
         """老库升级：缺的列自动 ALTER 补上（成功 True / 本来就有 True / 失败 False）"""
@@ -264,6 +310,29 @@ class StatsDB:
         """fans 列能不能用（老库补列失败时降级：明细里番种显示「-」，其余照旧）"""
         return self.has_col("fans")
 
+    # ---- ★ v2.9.27：「同一手牌只留一条」的开关与时窗（运行时可变，不重启）
+    def set_merge_policy(self, enabled: bool = True,
+                         window_ms: Optional[int] = None) -> None:
+        """改「同一手牌只留一条」的策略 —— 桌面端设置窗口改完立刻调这里
+
+        enabled=False：完全退回老行为（算一次记一条），不删已有数据，也不影响
+        历史清理（那个走 dedupe_plan，与此无关）。
+        window_ms 为 None 时保留当前窗口；给值会被夹到 1 秒 ~ 6 小时。
+        """
+        self._merge_enabled = bool(enabled)
+        if window_ms is not None:
+            try:
+                ms = int(window_ms)
+            except Exception:          # noqa: BLE001
+                ms = int(SAME_HAND_UPSERT_MS)
+            self._merge_ms = max(1000, min(ms, 6 * 3600 * 1000))
+
+    def merge_policy(self) -> Dict[str, int]:
+        """当前策略：{"enabled": 0/1, "window_ms": N, "window_sec": N}（给界面回读）"""
+        ms = int(self._merge_ms)
+        return {"enabled": 1 if self._merge_enabled else 0,
+                "window_ms": ms, "window_sec": int(round(ms / 1000.0))}
+
     # ---- 写入（落库失败绝不阻断算番）
     def record(self, *, ts_ms: int, user_key: str, uuid: str = "",
                client_type: str = "web", ip: str = "", ua: str = "",
@@ -281,6 +350,14 @@ class StatsDB:
                 if len(self._dup) > 1000:
                     cutoff = ts_ms - 60000
                     self._dup = {k: v for k, v in self._dup.items() if v >= cutoff}
+            # ★ v2.9.26：同一手牌「只留一条」——十分钟内同一个人这手牌再算出来，
+            #   不是新的一手，而是同一个结论又变了一次（改选项 / 换番种都会重算）。
+            #   这时把库里那条就地更新成最新结果，绝不插新行。
+            if self._reuse_same_hand(
+                    sig=sig, user_key=user_key, ts_ms=int(ts_ms),
+                    total_fan=total_fan, base=base, reach=reach,
+                    fans_n=fans_n, fans=fans, model=model, nick=nick):
+                return True
         # ★ 可选列（fans / model / nick）**动态拼**：老库缺哪列就自动不带哪列。
         #   以前是「有 fans / 没 fans」两套 SQL，再加两列就是 8 套，拼着写才不失控。
         cols = ["ts_ms", "day", "user_key", "uuid", "client_type", "ip", "ua",
@@ -290,7 +367,8 @@ class StatsDB:
                       int(total_fan), int(base), int(reach), int(fans_n)]
         for nm, v in (("fans", str(fans or "")),
                       ("model", str(model or "")),
-                      ("nick", str(nick or ""))):
+                      ("nick", str(nick or "")),
+                      ("sig", str(sig or ""))):
             if self.has_col(nm):
                 cols.append(nm)
                 vals.append(v)
@@ -307,6 +385,63 @@ class StatsDB:
                 sys.stderr.write("[stats] 记录失败：%r\n" % (exc,))
             except Exception:
                 pass
+            return False
+
+    def _reuse_same_hand(self, *, sig: str, user_key: str, ts_ms: int,
+                         total_fan: int = 0, base: int = 0, reach: int = 0,
+                         fans_n: int = 0, fans: str = "", model: str = "",
+                         nick: str = "") -> bool:
+        """同一手牌「只留一条」：十分钟内同一个人这手牌再算出来 → 就地改成最新
+
+        为什么不是「再插一条」：手机端每动一个选项就重算重报一次，手牌指纹
+        （sig）不变但番数会变。以前这些全落库，导致一次实战刷出二十几条同一手牌
+        的记录，统计被人为放大。现在只保留一条，番数取**最后一次**算出来的
+        （用户最后看到哪个数，库里就是哪个数）。
+
+        匹配条件（三条全中才算同一手牌）：
+          · 同一个 sig（手牌指纹，由调用方算）
+          · 同一个 user_key（同一个人）
+          · 距已有那条不超过 SAME_HAND_UPSERT_MS
+
+        更新成功返回 True（调用方直接当成功，不再插入）；
+        没有可复用的那条 / 更新失败返回 False（调用方照常插入新行）。
+        """
+        key = str(sig or "")
+        ukey = str(user_key or "")
+        if not key or not ukey or not self.has_col("sig"):
+            return False
+        if not self._merge_enabled:      # ★ v2.9.27：开关关掉 → 退回「算一次记一条」
+            return False
+        win_ms = int(self._merge_ms)
+        try:
+            with self._lock:
+                row = self._conn.execute(
+                    "SELECT id FROM score_log WHERE sig = ? AND user_key = ? "
+                    "AND ts_ms >= ? ORDER BY ts_ms DESC, id DESC LIMIT 1",
+                    (key, ukey, int(ts_ms) - win_ms)
+                ).fetchone()
+                if not row:
+                    return False
+                rid = int(row[0])
+                sets = ["ts_ms = ?", "day = ?", "total_fan = ?", "base = ?",
+                        "reach = ?", "fans_n = ?"]
+                vals: List = [int(ts_ms), _day_local(int(ts_ms)),
+                              int(total_fan), int(base), int(reach),
+                              int(fans_n)]
+                for nm, v in (("fans", str(fans or "")),
+                              ("model", str(model or "")),
+                              ("nick", str(nick or ""))):
+                    if self.has_col(nm):
+                        sets.append("%s = ?" % nm)
+                        vals.append(v)
+                vals.append(rid)
+                self._conn.execute(
+                    "UPDATE score_log SET %s WHERE id = ?" % ", ".join(sets),
+                    tuple(vals))
+                self._conn.commit()
+            return True
+        except Exception as exc:       # noqa: BLE001
+            _warn("[stats] 合并同手牌失败：%r" % (exc,))
             return False
 
     # ---- ★ v2.9.12：昵称（用户自己报的设备名，UA 里没有，只能落库）
@@ -610,6 +745,328 @@ class StatsDB:
             r["user_key"] = user_key
         self._fill_device_info(rows)
         return rows
+
+    # ---- ★ v2.9.19：服务器端维护接口（桌面端新「统计」页要能实时看、改、删）
+    def signal(self) -> Tuple[int, int]:
+        """轻量变化信号 `(最大 id, 总条数)` —— 实时面板拿它轮询。
+
+        为什么用这两个数而不是时间戳：任何新增 / 删除都会改变其中之一，
+        而一次 `SELECT MAX(id), COUNT(*)` 走主键索引，比重新聚合便宜得多。
+        查询失败返回 `(0, -1)`（-1 是「读不到」的哨兵，不是真实条数）。
+        """
+        try:
+            with self._lock:
+                row = self._conn.execute(
+                    "SELECT COALESCE(MAX(id), 0), COUNT(*) FROM score_log"
+                ).fetchone()
+            row = row or (0, 0)
+            return (int(row[0] or 0), int(row[1] or 0))
+        except Exception as exc:       # noqa: BLE001
+            _warn("[stats] 读取变化信号失败：%r" % (exc,))
+            return (0, -1)
+
+    def client_summary(self, day: Optional[str] = None) -> Dict[str, int]:
+        """按客户端拆分的手数 / 番数：{"hands","fan","web_hands","desktop_hands"}
+
+        实时面板要显示「其中 Web 端多少手」，`total_summary` 没有这一维，
+        所以在库里直接 GROUP BY，别让界面层反复扫明细行。
+        """
+        out = {"hands": 0, "fan": 0, "web_hands": 0, "desktop_hands": 0,
+               "web_fan": 0, "desktop_fan": 0}
+        sql = ("SELECT client_type, COUNT(*), COALESCE(SUM(total_fan), 0) "
+               "FROM score_log")
+        params: List = []
+        if day:
+            sql += " WHERE day = ?"
+            params.append(day)
+        sql += " GROUP BY client_type"
+        try:
+            with self._lock:
+                got = self._conn.execute(sql, params).fetchall()
+        except Exception as exc:       # noqa: BLE001
+            _warn("[stats] 读取客户端分布失败：%r" % (exc,))
+            return out
+        for ctype, cnt, fan in got:
+            cnt = int(cnt or 0)
+            out["hands"] += cnt
+            out["fan"] += int(fan or 0)
+            if str(ctype or "web") == "desktop":
+                out["desktop_hands"] += cnt
+                out["desktop_fan"] += int(fan or 0)
+            else:
+                out["web_hands"] += cnt
+                out["web_fan"] += int(fan or 0)
+        return out
+
+    def _select_cols(self) -> Tuple[List[str], str]:
+        """明细类查询共用的列清单 + SELECT 片段（可选列按库里实际有无拼）"""
+        cols = ["id", "ts_ms", "day", "user_key", "client_type", "ip", "ua",
+                "total_fan", "base", "reach", "fans_n"]
+        sel = ("id, ts_ms, day, user_key, client_type, ip, ua, "
+               "total_fan, base, reach, fans_n")
+        for nm in ("fans", "model", "nick"):
+            if self.has_col(nm):
+                cols.append(nm)
+                sel += ", " + nm
+        return cols, sel
+
+    def recent_rows(self, day: Optional[str] = None,
+                    client_type: Optional[str] = None,
+                    limit: int = 300) -> List[Dict]:
+        """所有人最近的若干条记录（时间倒序，**带 id**）
+
+        与 `detail_rows` 的区别：那个是「某一个人的」，这个是「所有人最近的」；
+        编辑 / 删除都要拿 id 定位，所以这里必须带 id。
+        `client_type` 传 "web" / "desktop" 可只看某一端（None = 都看）。
+        """
+        cols, sel = self._select_cols()
+        sql = "SELECT %s FROM score_log" % sel
+        where: List[str] = []
+        params: List = []
+        if day:
+            where.append("day = ?")
+            params.append(day)
+        if client_type:
+            where.append("client_type = ?")
+            params.append(str(client_type))
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY ts_ms DESC, id DESC LIMIT ?"
+        params.append(max(1, int(limit)))
+        try:
+            with self._lock:
+                got = self._conn.execute(sql, params).fetchall()
+        except Exception as exc:       # noqa: BLE001
+            _warn("[stats] 读取最近记录失败：%r" % (exc,))
+            return []
+        rows = [dict(zip(cols, r)) for r in got]
+        for nm in ("fans", "model", "nick"):
+            if nm not in cols:
+                for r in rows:
+                    r[nm] = ""
+        self._fill_device_info(rows)
+        return rows
+
+    def row_by_id(self, row_id: int) -> Optional[Dict]:
+        """按 id 取一条原始记录（编辑对话框据此回填当前值）"""
+        try:
+            row_id = int(row_id)
+        except Exception:              # noqa: BLE001
+            return None
+        cols, sel = self._select_cols()
+        try:
+            with self._lock:
+                one = self._conn.execute(
+                    "SELECT %s FROM score_log WHERE id = ?" % sel,
+                    (row_id,)).fetchone()
+        except Exception as exc:       # noqa: BLE001
+            _warn("[stats] 读取记录 %s 失败：%r" % (row_id, exc))
+            return None
+        if not one:
+            return None
+        r = dict(zip(cols, one))
+        for nm in ("fans", "model", "nick"):
+            r.setdefault(nm, "")
+        self._fill_device_info([r])
+        return r
+
+    # 允许在服务器端改的字段白名单 —— 时间 / 用户 / IP / UA 属「事实」不让改，
+    # 改了就分不清「谁算的」；番数 / 起番 / 达标 / 番种属「可纠正的判定」才开口子。
+    EDITABLE_FIELDS = ("total_fan", "base", "reach", "fans_n", "fans")
+
+    def update_row(self, row_id: int, **fields) -> bool:
+        """改一条记录的判定字段（白名单见 `EDITABLE_FIELDS`）
+
+        只在桌面端「统计」页的编辑对话框里用；写失败只记日志、返回 False，
+        与 record() 一样不抛异常（统计坏了不能连累算番）。
+        """
+        sets: List[str] = []
+        vals: List = []
+        for nm, v in fields.items():
+            if nm not in self.EDITABLE_FIELDS:
+                continue
+            if nm == "fans" and not self.has_col("fans"):
+                continue                      # 老库没这列：跳过它，其余照改
+            if nm in ("total_fan", "base", "reach", "fans_n"):
+                try:
+                    v = int(v or 0)
+                except Exception:         # noqa: BLE001
+                    v = 0
+            else:
+                v = str(v or "")
+            sets.append("%s = ?" % nm)
+            vals.append(v)
+        if not sets:
+            return False
+        vals.append(int(row_id))
+        sql = "UPDATE score_log SET %s WHERE id = ?" % ", ".join(sets)
+        try:
+            with self._lock:
+                cur = self._conn.execute(sql, tuple(vals))
+                self._conn.commit()
+            return int(cur.rowcount or 0) > 0
+        except Exception as exc:       # noqa: BLE001
+            _warn("[stats] 修改记录 %s 失败：%r" % (row_id, exc))
+            return False
+
+    def delete_row(self, row_id: int) -> bool:
+        """删一条记录（按 id）。删不到（早被删了）返回 False，不算异常。"""
+        try:
+            with self._lock:
+                cur = self._conn.execute(
+                    "DELETE FROM score_log WHERE id = ?", (int(row_id),))
+                self._conn.commit()
+            return int(cur.rowcount or 0) > 0
+        except Exception as exc:       # noqa: BLE001
+            _warn("[stats] 删除记录 %s 失败：%r" % (row_id, exc))
+            return False
+
+    def delete_user(self, user_key: str, day: Optional[str] = None) -> int:
+        """删掉某个人（可限定某天）的全部记录，返回实际删除条数
+
+        ★ 顺手把 `user_nick` 里那人占的名字也退掉：否则人删干净了、
+          昵称表还占着「老张」，下次同名上报会莫名变成「老张#2」。
+        """
+        key = str(user_key or "")
+        if not key:
+            return 0
+        sql = "DELETE FROM score_log WHERE user_key = ?"
+        params: List = [key]
+        if day:
+            sql += " AND day = ?"
+            params.append(day)
+        try:
+            with self._lock:
+                cur = self._conn.execute(sql, tuple(params))
+                self._conn.commit()
+                n = int(cur.rowcount or 0)
+            if n:
+                with self._lock:
+                    self._conn.execute(
+                        "DELETE FROM user_nick WHERE user_key = ?", (key,))
+                    self._conn.commit()
+            return n
+        except Exception as exc:       # noqa: BLE001
+            _warn("[stats] 删除用户 %s 失败：%r" % (key, exc))
+            return 0
+
+    def delete_day(self, day: str) -> int:
+        """删掉某一天的全部记录，返回实际删除条数
+
+        ★ v2.9.26：统计页右键「删除这一天」用它 —— 记错了想整天重来时才用得上。
+          昵称表**不动**：那天的人还在别的日子有记录，退掉名字会让其他天失名。
+        """
+        d = str(day or "")
+        if not d:
+            return 0
+        try:
+            with self._lock:
+                cur = self._conn.execute(
+                    "DELETE FROM score_log WHERE day = ?", (d,))
+                self._conn.commit()
+                return int(cur.rowcount or 0)
+        except Exception as exc:       # noqa: BLE001
+            _warn("[stats] 删除 %s 的记录失败：%r" % (d, exc))
+            return 0
+
+    # ---- ★ v2.9.26：历史重复清理（老记录没有 sig，只能按时间窗归组）
+    def dedupe_plan(self, window_sec: int = DEDUPE_DEFAULT_WINDOW_SEC
+                    ) -> Dict:
+        """算一遍「历史重复清理」会删哪些，**只读，不动库**
+
+        老记录（v2.9.26 之前）没有 sig 列，无法按手牌指纹判重，所以按
+        「同一天 + 同一个人 + 相邻两条间隔 ≤ window_sec」归成一组，组内
+        **留番数最大的那条**（并列留时间晚的），其余都是同一次算番折腾出来的
+        中间结果，删掉。
+
+        为什么留最大而不是留最后：实测同一批数据，留最大比留最后多留下
+        400~500 番，更贴近「那几手真实的和牌」。
+
+        返回：
+          {ok, total, keep, drop, drop_ids:[...], groups:[{day, user_key,
+           nick, drop, keep_fan, drop_fan}]}
+        groups 已按「删除条数 desc, day desc」排好，供预览对话框直接展示。
+        """
+        win_ms = max(1, int(window_sec)) * 1000
+        info: Dict = {"ok": False, "total": 0, "keep": 0, "drop": 0,
+                      "drop_ids": [], "groups": []}
+        try:
+            sel = "id, ts_ms, day, user_key, total_fan"
+            if self.has_col("nick"):
+                sel += ", nick"
+            with self._lock:
+                got = self._conn.execute(
+                    "SELECT %s FROM score_log ORDER BY day, user_key, ts_ms, id"
+                    % sel).fetchall()
+        except Exception as exc:       # noqa: BLE001
+            _warn("[stats] 读取清理候选失败：%r" % (exc,))
+            return info
+        rows = []
+        for r in got:
+            rows.append({"id": int(r[0]), "ts_ms": int(r[1]),
+                         "day": r[2], "user_key": r[3],
+                         "total_fan": int(r[4] or 0),
+                         "nick": (r[5] if len(r) > 5 else "") or ""})
+        info["total"] = len(rows)
+        drop_ids: List[int] = []
+        groups: List[Dict] = []
+        cur: List[Dict] = []
+        prev_key = None
+        prev_ts = 0
+        for r in rows:
+            key = (r["day"], r["user_key"])
+            if key != prev_key or (r["ts_ms"] - prev_ts) > win_ms:
+                if len(cur) > 1:
+                    groups.append(self._dedupe_group(cur, drop_ids))
+                cur = [r]
+            else:
+                cur.append(r)
+            prev_key, prev_ts = key, r["ts_ms"]
+        if len(cur) > 1:
+            groups.append(self._dedupe_group(cur, drop_ids))
+        groups.sort(key=lambda g: (-g["drop"], str(g["day"])), reverse=False)
+        info["ok"] = True
+        info["drop"] = len(drop_ids)
+        info["keep"] = len(rows) - len(drop_ids)
+        info["drop_ids"] = drop_ids
+        info["groups"] = groups
+        return info
+
+    @staticmethod
+    def _dedupe_group(cluster: List[Dict], drop_ids: List[int]) -> Dict:
+        """一个重复组：留番数最大（并列留最晚）那条，其余 id 记进 drop_ids"""
+        best = cluster[0]
+        for r in cluster[1:]:
+            if (r["total_fan"], r["ts_ms"]) > (best["total_fan"], best["ts_ms"]):
+                best = r
+        drop_fan = 0
+        for r in cluster:
+            if r["id"] != best["id"]:
+                drop_ids.append(r["id"])
+                drop_fan += r["total_fan"]
+        return {"day": best["day"], "user_key": best["user_key"],
+                "nick": best["nick"], "drop": len(cluster) - 1,
+                "keep_fan": best["total_fan"], "drop_fan": drop_fan}
+
+    def dedupe_apply(self, ids: List[int]) -> int:
+        """按 dedupe_plan 给出的 id 真删，返回实际删除条数（分批，防 SQL 变量上限）"""
+        todo = [int(i) for i in (ids or []) if str(i).strip()]
+        if not todo:
+            return 0
+        n = 0
+        try:
+            for i in range(0, len(todo), 400):
+                chunk = todo[i:i + 400]
+                with self._lock:
+                    cur = self._conn.execute(
+                        "DELETE FROM score_log WHERE id IN (%s)"
+                        % ",".join("?" * len(chunk)), tuple(chunk))
+                    self._conn.commit()
+                    n += int(cur.rowcount or 0)
+            return n
+        except Exception as exc:       # noqa: BLE001
+            _warn("[stats] 清理历史重复失败：%r" % (exc,))
+            return n
 
     def close(self) -> None:
         try:
