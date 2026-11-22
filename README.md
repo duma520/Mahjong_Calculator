@@ -2052,7 +2052,7 @@ Mahjong_Calculator\                     # ← 【入库】跟随仓库一起分�
 ├── icon.ico                       # 程序图标
 ├── README.md                      # 本文档
 ├── 软件升级迭代记录.md             # 逐版本变更记录
-├── LICENSE                        # MIT 许可证
+├── LICENSE                        # AGPL-3.0 许可证
 ├── .gitignore                     # 哪些目录不进仓库
 ├── .env.example                   # 环境变量占位（无真实值）
 ├── 麻将图\                        # 牌面图（43 张 PNG，运行必需）
@@ -2226,3 +2226,12 @@ Mahjong_Calculator\                     # ← 【入库】跟随仓库一起分�
 
 > 本文档随《国标麻将算番器》发布，覆盖从 v1.0 到 v2.9.30 的全部版本历史。
 > 如需最新版本，请访问 https://github.com/duma520/Mahjong_Calculator
+
+## 许可
+
+本项目采用 **GNU Affero General Public License v3.0（AGPL-3.0）** 发布。
+
+- 完整许可证条文见仓库根目录 [LICENSE](LICENSE)。
+- 你可以自由使用、修改、分发，包括用于商业用途，无需另行获得授权。
+- 若你修改后分发，或以网络服务方式提供本软件，必须按 AGPL-3.0 公开相应源代码。
+- 本仓库自 2026-11-23 起改用 AGPL-3.0；此前已按 MIT / BSD-3-Clause 发布的版本，其接收者依原许可证获得的授权继续有效。
