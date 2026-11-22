@@ -8,7 +8,6 @@
 
 <img width="1257" height="948" alt="image" src="https://github.com/user-attachments/assets/7e9cc277-4363-4ddb-8ce5-aad9e4907f76" />
 
-
 ---
 
 # 国标麻将算番器 · 完全使用手册 - v2.9.30
@@ -22,7 +21,7 @@
 | 软件名称 | 国标麻将算番器（英文名：Mahjong_Calculator） |
 | 作者 | 杜玛 |
 | 版权 | © 永久 杜玛 保留所有权利 |
-| 开源许可证 | MIT License |
+| 开源许可证 | AGPL-3.0 |
 | 项目地址 | https://github.com/duma520/Mahjong_Calculator |
 | 作者主页 | https://github.com/duma520 |
 | 问题报告 | 通过 GitHub Issues 提交 |
@@ -31,7 +30,7 @@
 | 本文档日期 | 永久 |
 | 当前软件版本 | 2.9.30（2026-11-22） |
 
-> **版权声明**：本文档内容未经书面许可不得转载或用于商业用途。本文档随软件以 MIT 许可证发布，但文档本身的转载与商业使用需获得作者书面许可。
+> **版权声明**：本文档内容随本仓库以 AGPL-3.0 发布，可自由转载与商用。本文档随软件以 AGPL-3.0 许可证发布，但文档本身的转载与商业使用需获得作者书面许可。
 >
 > **注意**：我们不提供私人邮箱支持，所有技术支持都通过公开渠道进行，以便其他用户也能受益。
 
@@ -1590,7 +1589,7 @@ A：不是。它只算番，不对局。
 A：不用。桌面版完全离线。
 
 **Q：收费吗？**  
-A：免费，MIT 开源许可证。
+A：免费，AGPL-3.0 开源许可证。
 
 **Q：会收集我的隐私吗？**  
 A：不会。所有数据都在本地。
@@ -2076,7 +2075,6 @@ Mahjong_Calculator\                     # ← 【入库】跟随仓库一起分�
 └── msyh.ttf                       # 【不入库】微软雅黑，商用需授权
 ```
 
-
 ---
 
 # 附录 C · 全部快捷键与命令行参数
@@ -2210,35 +2208,15 @@ Mahjong_Calculator\                     # ← 【入库】跟随仓库一起分�
 
 ## E.3 开源许可证
 
-**MIT License**
+**AGPL-3.0**
 
-```
-Copyright (c) 永久 杜玛
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
+完整许可证条文见仓库根目录 [LICENSE](LICENSE)（GNU AGPL-3.0）。
 
 ## E.4 版权声明
 
 © 永久 杜玛 保留所有权利。
 
-本文档内容未经书面许可不得转载或用于商业用途。
+本文档内容随本仓库以 AGPL-3.0 发布，可自由转载与商用。
 
 **注意**：我们不提供私人邮箱支持，所有技术支持都通过公开渠道进行，以便其他用户也能受益。
 
