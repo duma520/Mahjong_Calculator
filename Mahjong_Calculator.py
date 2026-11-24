@@ -67,8 +67,8 @@
         ③ 别的程序：`score_hand(..., voice_set="鲸宝")` /
            `--voice-set 鲸宝` / `GET /api/readout?total=123&set=鲸宝`。
     · ★ **别的程序要用，不用复制我们的文件**：把目录告诉它即可 ——
-        score_hand(..., readout=True, base_dir=r"D:\麻将\Mahjong_Calculator")
-        Mahjong_Calculator.exe --say 123 --readout --dir "D:\麻将\Mahjong_Calculator"
+        score_hand(..., readout=True, base_dir=r"C:\Mahjong_Calculator")
+        Mahjong_Calculator.exe --say 123 --readout --dir "C:\Mahjong_Calculator"
         GET /api/readout?total=123     （返回中文读法 + 每段音频的文件名与下载地址）
 
 Web 版（给手机/平板**浏览器**用；★ 不是给程序调用的接口）
@@ -157,7 +157,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QTextBrowser, QToolButton, QVBoxLayout, QWidget,
 )
 
-__version__ = "2.9.30"
+__version__ = "2.9.35"
 APP_NAME = "国标麻将算番器"                 # 中文名（界面显示，保持不变）
 APP_NAME_EN = "Mahjong_Calculator"        # ★ v2.7.3 英文名：文件名 / exe / 打包目录统一用它
 SETTINGS_FILE = "mahjong_settings.json"
@@ -469,6 +469,44 @@ except Exception as _exc:       # noqa: BLE001
         return _norm_(val, REC_COL_KEYS_, default)
 
     STATS_COLS_API_ERROR = repr(_exc)
+
+# ★ v2.9.31：大屏看板（统计页「📺 大屏看板」按钮 / 独立黑底全屏窗口）
+#   单独一个模块，主程序只负责接线；导入失败也不能让主程序起不来。
+try:
+    from mahjong_wall import (WallBoardDialog as WallBoardDialog_,
+                              default_config as wall_default_config_,
+                              normalize_config as wall_normalize_config_,
+                              SETTING_KEYS as WALL_SETTING_KEYS_)
+    WALL_IMPORT_ERROR = None
+except Exception as _exc:       # noqa: BLE001
+    WallBoardDialog_ = None             # type: ignore[assignment]
+    WALL_IMPORT_ERROR = repr(_exc)
+    WALL_SETTING_KEYS_ = ("wall_ips", "wall_names", "wall_recent_n",
+                          "wall_label_mode", "wall_show_lines",
+                          "wall_hide_unknown", "wall_show_cnt",
+                          # ★ v2.9.32 新增：描边粗细 / 描边颜色 / 配色方案 /
+                          #   自定义方案 / 窗口几何 / 最大化
+                          "wall_stroke", "wall_stroke_color",
+                          "wall_palette", "wall_palettes",
+                          "wall_geo", "wall_maximized",
+                          # ★ v2.9.33 新增：五档颜色分配口径 / 第一名反色高亮
+                          "wall_score_mode", "wall_highlight_first")
+
+    def wall_default_config_() -> dict:     # type: ignore[misc]
+        """兜底：看板模块导入不了时，设置项也要有默认值可存"""
+        return {"wall_ips": [], "wall_names": {}, "wall_recent_n": 10,
+                "wall_label_mode": "last", "wall_show_lines": True,
+                "wall_hide_unknown": False, "wall_show_cnt": True,
+                "wall_stroke": 0.08, "wall_stroke_color": "#FFFFFF",
+                "wall_palette": "classic",
+                "wall_palettes": {}, "wall_geo": [], "wall_maximized": False,
+                "wall_score_mode": "rank", "wall_highlight_first": True}
+
+    def wall_normalize_config_(cfg) -> dict:    # type: ignore[misc]
+        out = wall_default_config_()
+        if isinstance(cfg, dict):
+            out.update({k: cfg[k] for k in WALL_SETTING_KEYS_ if k in cfg})
+        return out
 
 DEFAULT_API_PORT = 8718
 
@@ -881,8 +919,8 @@ HELP_TEXT = """
 （中文逐字 + 每段音频的文件名与路径），<code>--speak</code> 顺带念出来；
 <code>--say 123</code> 可以不算番、只把数字 N 念出来（<code>--say 123 --speak</code> 直接出声）。</li>
 <li>★ <b>别的程序要用读番，不用复制音频</b>：把我们的目录指过来就行 ——
-<code>Mahjong_Calculator.exe --hand "..." --readout --dir "D:\麻将\Mahjong_Calculator"</code>，
-或进程内 <code>score_hand(..., readout=True, base_dir=r"D:\麻将\Mahjong_Calculator")</code>；
+<code>Mahjong_Calculator.exe --hand "..." --readout --dir "C:\Mahjong_Calculator"</code>，
+或进程内 <code>score_hand(..., readout=True, base_dir=r"C:\Mahjong_Calculator")</code>；
 返回里的 <code>dir</code> 就是《数字》音频目录，<code>clips</code> 是依次要播的文件。</li>
 </ul>
 
@@ -1560,6 +1598,10 @@ class MahjongFanWindow(QMainWindow):
         self._settings_dlg = None                  # 设置窗口（打开时才有）
         self._stats_dlg = None                     # ★ v2.9.7 统计窗口（打开时才有；改列时要跟着刷新）
         self._detail_dlg = None                    # ★ v2.9.10 逐手明细窗口（打开时才有；改列时跟着刷新）
+        # ★ v2.9.31：大屏看板设置。老设置文件里没有这些键 → 用模块默认值，行为不变
+        self._wall_dlg = None                      # 看板窗口（打开时才有，同一时刻只开一个）
+        self.wall_cfg: Dict = wall_normalize_config_(
+            {k: self._global_settings.get(k) for k in WALL_SETTING_KEYS_})
         self.api_server = None                # ★ 本地 HTTP API 服务（设置窗口「Web 版」里开/关）
         self.api_port = int(self._global_settings.get("api_port") or DEFAULT_API_PORT)
         self.api_auto_start = bool(self._global_settings.get("api_auto_start", False))
@@ -2040,6 +2082,22 @@ class MahjongFanWindow(QMainWindow):
             lambda: self._stats_fill_col_menu("detail"))
         self.btn_stats_detail_cols.setMenu(self._menu_detail)
         top.addWidget(self.btn_stats_detail_cols)
+        # ★ v2.9.31：大屏看板（当天成绩投到投影 / 电视上；独立黑底窗口，F11 全屏）
+        self.btn_stats_wall = QPushButton("📺 大屏看板")
+        self.btn_stats_wall.setToolTip(
+            "把当天成绩投到大屏：上半每个 IP 一行（次数 / 总分），"
+            "下半最近几手（时间 / 分数）。黑底白描边，几米外也看得清")
+        self.btn_stats_wall.clicked.connect(self._open_wall_board)
+        top.addWidget(self.btn_stats_wall)
+        # ★ v2.9.35：网页版看板 —— 电视盒子（当贝 B1/B3/H5 等）直接用自带浏览器打开，
+        #   不用投屏（Miracast 属于 OS/驱动层，程序里加不了）
+        self.btn_stats_wall_url = QPushButton("🌐 Web 看板地址")
+        self.btn_stats_wall_url.setToolTip(
+            "把「大屏看板」的网页版地址复制到剪贴板；\n"
+            "电视盒子 / 手机浏览器打开就能看，不用投屏。\n"
+            "（需要先在「设置 → Web 版」把服务打开、允许局域网访问）")
+        self.btn_stats_wall_url.clicked.connect(self._copy_wall_web_url)
+        top.addWidget(self.btn_stats_wall_url)
         self.cb_stats_live = QCheckBox("实时刷新")
         self.cb_stats_live.setChecked(True)
         self.cb_stats_live.setToolTip("每 2 秒看一眼数据库有没有新记录，有才重建表格")
@@ -2349,6 +2407,14 @@ class MahjongFanWindow(QMainWindow):
             self.stats_day = str(box.currentData() or "")
         self._autosave_settings()
         self._stats_refresh(force=True)
+        # ★ v2.9.31：看板开着、且这里选了具体某天 → 看板跟着切到同一天。
+        #   选的是「全部日期」时**不动看板**：看板是当天大屏，不该被拉去汇总全部历史。
+        dlg = getattr(self, "_wall_dlg", None)
+        if dlg is not None and self.stats_day:
+            try:
+                dlg.set_day(self.stats_day)
+            except RuntimeError:        # 已经被关掉了
+                self._wall_dlg = None
 
     def _stats_client_changed(self, _i: int = -1) -> None:
         """范围下拉改选 → 记住它，再按新范围刷新"""
@@ -2466,6 +2532,86 @@ class MahjongFanWindow(QMainWindow):
             self._stats_refresh(force=True)
         else:
             t.stop()
+
+    def _wall_web_url(self) -> str:
+        """★ v2.9.35：大屏看板的网页版地址（给电视盒子/手机浏览器打开）
+
+        · 只绑本机（api_lan=False）时给 127.0.0.1 —— 盒子连不上，所以顺带提示
+        · 设了口令就附 ?token=（/wall 已在 web 免口令组里，默认不需要）
+        """
+        ip = lan_ip_() if self.api_lan else "127.0.0.1"
+        url = "http://%s:%d/wall" % (ip, self.api_port)
+        if self.api_token:
+            url += "?token=" + self.api_token
+        return url
+
+    def _copy_wall_web_url(self) -> None:
+        """★ v2.9.35：「🌐 Web 看板地址」按钮 → 复制地址
+
+        真出错的情况要先说清楚，而不是只是复制一个盒子根本打不开的地址：
+        服务没开 / 只绑了本机 → 明确提示怎么改。
+        """
+        url = self._wall_web_url()
+        if not self._api_running():
+            hint = "Web 版服务还没开。先点「设置 → Web 版 → 启动」，或打开「自动启动」。"
+            self.statusBar().showMessage(hint, 8000)
+            QMessageBox.information(self, "Web 看板地址", "%s\n\n地址：%s" % (hint, url))
+            return
+        if not self.api_lan:
+            hint = ("当前只允许本机访问（局域网访问没开），电视盒子连不上。\n"
+                    "去「设置 → Web 版」勾上「允许局域网访问」后重启服务。")
+            QMessageBox.information(self, "Web 看板地址", "%s\n\n地址：%s" % (hint, url))
+            return
+        self._copy_text(url, "Web 看板地址")
+
+    def _open_wall_board(self) -> None:
+        """★ v2.9.31：打开「大屏看板」独立窗口
+
+        · 同一时刻只开一个；再点按钮就把已有的提到前面
+        · 默认显示**今天**（用户要的是当天数据）；统计页选了具体某天时跟随那天
+        · 看板里的「上墙设置」改动会回调回来 → 立刻存盘（实时自动保存）
+        """
+        if WallBoardDialog_ is None:
+            QMessageBox.warning(
+                self, "大屏看板不可用",
+                "看板模块 mahjong_wall.py 没能加载：\n\n%s\n\n"
+                "请确认它和主程序在同一个目录。" % (WALL_IMPORT_ERROR or "未知原因"))
+            return
+        # 统计页选了具体某天 → 跟随；停在「全部日期」→ 看板回今天
+        import time as _t
+        day = (str(self.stats_day or "").strip()
+               or _t.strftime("%Y-%m-%d"))
+        dlg = self._wall_dlg
+        if dlg is not None:
+            try:
+                dlg.set_day(day)
+                dlg.show()
+                dlg.raise_()
+                dlg.activateWindow()
+                return
+            except RuntimeError:        # 底层 C++ 对象已销毁（用户关掉了）
+                self._wall_dlg = None
+        dlg = WallBoardDialog_(self.stats, day, self.wall_cfg,
+                               self, self._wall_cfg_changed)
+        self._wall_dlg = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
+    def _wall_cfg_changed(self, cfg: dict) -> None:
+        """看板设置变了 → 存进内存 + 立刻写盘（不依赖用户手动保存）
+
+        ★ v2.9.35：如果 Web 版服务正在跑，顺手把新配置塞给它 ——
+          否则网页版要等重启服务才看到新配色（桌面窗口却是立刻生效的）。
+        """
+        self.wall_cfg = wall_normalize_config_(cfg)
+        srv = getattr(self, "api_server", None)
+        if srv is not None and getattr(srv, "running", False):
+            try:
+                srv.wall_cfg = dict(self.wall_cfg or {})
+            except Exception:       # noqa: BLE001  服务端只读快照，失败不影响桌面
+                pass
+        self._autosave_settings()
 
     def _on_page_changed(self, idx: int) -> None:
         """★ v2.9.19：页面切换钩子 —— 站到「统计」页才轮询，离开就停
@@ -3136,6 +3282,7 @@ class MahjongFanWindow(QMainWindow):
         self.same_hand_merge = True    # ★ v2.9.27：同手牌只留一条 → 回默认「开」
         self.stats_day = ""            # ★ v2.9.28：统计页日期 / 范围 → 回「全部」
         self.stats_client = ""
+        self.wall_cfg = wall_normalize_config_(None)   # ★ v2.9.31：看板设置回默认
         self.speak_default = SPEAK_DEFAULT
         self.voice_set = VOICE_SET                                        # ★ v2.9.3 语音包
         self.api_port = DEFAULT_API_PORT
@@ -3268,7 +3415,10 @@ class MahjongFanWindow(QMainWindow):
                          # ★ v2.9.7：Web 端「统计」面板默认显示哪几列 = 桌面端设置里的选择
                          stats_cols=list(self.stats_cols),
                          # ★ v2.9.10：Web 端「逐手明细」面板默认显示哪几列
-                         detail_cols=list(self.detail_cols))
+                         detail_cols=list(self.detail_cols),
+                         # ★ v2.9.35：大屏看板网页版（/wall）用的配置快照 ——
+                         #   配色 / 分档 / 描边 / 最近几手 / 上墙 IP，与桌面看板同一份
+                         wall_cfg=dict(self.wall_cfg or {}))
         try:
             url = srv.start()
         except Exception as exc:       # noqa: BLE001
@@ -3491,6 +3641,9 @@ class MahjongFanWindow(QMainWindow):
             "same_hand_merge": bool(self.same_hand_merge),  # ★ v2.9.27 同手牌只留一条
             "stats_day": str(self.stats_day or ""),        # ★ v2.9.28 统计页选中的日期
             "stats_client": str(self.stats_client or ""),  # ★ v2.9.28 统计页选中的范围
+            # ★ v2.9.31：大屏看板的 7 个设置（键名见 mahjong_wall.SETTING_KEYS）
+            **{k: v for k, v in wall_normalize_config_(self.wall_cfg).items()
+               if k in WALL_SETTING_KEYS_},
             "mode": self.mode,
             "page": self.stack.currentIndex(),
             "api_port": int(self.api_port),
@@ -3553,6 +3706,15 @@ class MahjongFanWindow(QMainWindow):
         self.stats_day = str(s.get("stats_day") or "")
         self.stats_client = str(s.get("stats_client") or "")
         self._stats_restore_filters()
+        # ★ v2.9.31：大屏看板设置（老设置没有这些键 → 模块默认值，行为不变）
+        self.wall_cfg = wall_normalize_config_(
+            {k: s.get(k) for k in WALL_SETTING_KEYS_})
+        _wd = getattr(self, "_wall_dlg", None)
+        if _wd is not None:
+            try:
+                _wd.set_config(self.wall_cfg)
+            except RuntimeError:        # 已经被关掉了
+                self._wall_dlg = None
         # ★ v2.9.22：每页各自的宽度（老设置没有 → 空字典，一律用 PAGE_WIDTHS 预设）
         self.page_widths = {}
         _pw = s.get("page_widths")
@@ -3650,6 +3812,14 @@ class MahjongFanWindow(QMainWindow):
             pass
         if self.voice is not None:      # ★ v2.9.0：退出时别还在念
             self.voice.stop()
+        # ★ v2.9.31：看板窗口开着就先关掉（停它的 2 秒轮询，否则退出后会去查已关的库）
+        _wd = getattr(self, "_wall_dlg", None)
+        if _wd is not None:
+            try:
+                _wd.close()
+            except Exception:       # noqa: BLE001
+                pass
+            self._wall_dlg = None
         # ★ 先关本地 API（记住「下次启动自动开」的状态），再存设置
         self._api_stop(silent=True, remember=False)
         self._save_settings_now()

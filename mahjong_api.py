@@ -9,9 +9,9 @@
         这两种方式都**不需要 HTTP、不需要端口、不需要先启动谁**。
     · ★ v2.9.0 读番：算完番可以把「合计 N 番」念出来（音频在程序目录的《数字》子目录）。
       **别的程序要用不用复制我们的文件** —— 把程序目录告诉它就行：
-        · 进程内： score_hand(..., readout=True, base_dir=r"D:\麻将\Mahjong_Calculator",
+        · 进程内： score_hand(..., readout=True, base_dir=r"C:\Mahjong_Calculator",
                              voice_set="鲸宝")
-        · 命令行： Mahjong_Calculator.exe --hand "..." --readout --dir "D:\麻将\Mahjong_Calculator"
+        · 命令行： Mahjong_Calculator.exe --hand "..." --readout --dir "C:\Mahjong_Calculator"
                    （加 `--voice-set 鲸宝` 换语音包；默认用「女声」）
         · HTTP  ： GET /api/readout?total=123  → 中文读法 + 每段音频的文件名与下载地址
                    （加 `&set=女声` 换语音包）
@@ -469,7 +469,10 @@ TILE_FILE_RE = re.compile(r"^(?:B[1-9]|T[1-9]|W[1-9]|F[1-4]|J[1-3]|S[1-4]|P[1-4]
 ANON_GROUPS = {
     "web":   ("/", "/web", "/index.html", "/manifest.webmanifest",
                "/favicon.ico", "/apple-touch-icon.png", "/tiles/*",
-               "/audio/*"),          # ★ v2.9.0：读番音频跟牌面图一样，属于「Web 客户端」资源
+               "/audio/*",
+               # ★ v2.9.35：大屏看板网页版 —— 电视盒子没地方输口令，
+               #   跟着「Web 客户端」一起免口令最合理（关掉 web 组就一起要口令）
+               "/wall", "/api/wall"),
     "debug": ("/debug",),
     "info":  ("/api/health", "/api/version", "/api/tiles",
                "/api/fan_table", "/api/help",
@@ -2242,6 +2245,47 @@ class Handler(BaseHTTPRequestHandler):
                 "summary": stats.total_summary(day),
                 "users": stats.aggregate(day)}
 
+    # ---------------------------------------------------------------- 大屏看板
+    def _wall_html(self) -> str:
+        """GET /wall（★ v2.9.35）：大屏看板的网页版
+
+        给电视盒子（当贝 B1/B3/H5 等）自带浏览器打开用 —— 比投屏省事得多：
+        Miracast 全在网卡驱动/OS 层，应用层没有 API，程序里根本加不了。
+        """
+        try:
+            from mahjong_wall_web import render_wall_page
+        except Exception as exc:          # noqa: BLE001
+            return ("<!DOCTYPE html><meta charset='utf-8'>"
+                    "<body style='background:#000;color:#f88;font:16px sans-serif;"
+                    "padding:24px'>看板页面模块导入失败：%r<br><br>"
+                    "请确认 mahjong_wall_web.py 与 mahjong_wall_core.py 在同一目录。</body>"
+                    % (exc,))
+        return render_wall_page(APP_NAME)
+
+    def _wall_json(self) -> dict:
+        """GET /api/wall?day=YYYY-MM-DD（★ v2.9.35）：看板要画的全部数据
+
+        口径与桌面版「📺 大屏看板」逐字一致 —— 都走 `mahjong_wall_web.build_payload`
+        → `mahjong_wall_core`，不在服务端另写一套聚合逻辑。
+        """
+        try:
+            from mahjong_wall_web import render_wall_payload
+        except Exception as exc:          # noqa: BLE001
+            return {"ok": False, "msg": "看板模块导入失败：%r" % (exc,)}
+        q = parse_qs(urlparse(self.path).query)
+        day = (q.get("day") or [""])[0].strip()
+        if not day:
+            day = time.strftime("%Y-%m-%d")     # 大屏默认看「今天」，不是全部日期
+        cfg = getattr(self, "wall_cfg", None)
+        if cfg is None:
+            # ★ v2.9.35：handler 上不复制配置，实时回查所属 ApiServer ——
+            #   桌面端改配色后网页立刻生效，不必重启服务（实测踩过这个坑）
+            owner = getattr(self, "wall_owner", None)
+            cfg = getattr(owner, "wall_cfg", None)
+        return render_wall_payload(getattr(self, "stats", None), day,
+                                   dict(cfg or {}), APP_NAME)
+
+
     def _stats_detail_json(self) -> dict:
         """GET /api/stats_detail?user_key=…&day=…（★ v2.9.9）：某个用户的逐手牌明细
 
@@ -2378,6 +2422,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/debug":
             return self._send(DEBUG_HTML.replace("__APP__", APP_NAME),
                               ctype="text/html; charset=utf-8", no_store=True)
+        # ★ v2.9.35：大屏看板网页版（给电视盒子/手机浏览器打开，不用投屏）
+        if path == "/wall":
+            return self._send(self._wall_html(),
+                              ctype="text/html; charset=utf-8", no_store=True)
         if path == "/manifest.webmanifest":
             return self._send(MANIFEST,
                               ctype="application/manifest+json; charset=utf-8")
@@ -2455,6 +2503,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(out)
             if path == "/api/stats":
                 return self._send(self._stats_json())
+            if path == "/api/wall":              # ★ v2.9.35 大屏看板数据
+                return self._send(self._wall_json())
             if path == "/api/stats_detail":      # ★ v2.9.9 逐手牌明细
                 return self._send(self._stats_detail_json())
             if path in ("/api/waits", "/api/wins", "/api/waits_all"):
@@ -2523,7 +2573,7 @@ class ApiServer:
                  base_dir: Optional[str] = None, speak_default: bool = True,
                  voice_set: Optional[str] = None,
                  stats: Optional["StatsDB"] = None, stats_cols=None,
-                 detail_cols=None):
+                 detail_cols=None, wall_cfg=None):
         self.host = host
         self.port = int(port)
         self.token = token or ""
@@ -2560,6 +2610,9 @@ class ApiServer:
             self.stats = None
         self._httpd: Optional[ThreadingHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
+        # ★ v2.9.35：大屏看板网页版的配置快照（配色/分档/描边/最近几手/上墙 IP）。
+        #   桌面端改设置后重新传一份进来即可；Web 端只读，不回写。
+        self.wall_cfg = dict(wall_cfg or {})
 
     # ---- 生命周期
     @property
@@ -2588,6 +2641,9 @@ class ApiServer:
                         "anon": self.anon, "show": self.show,
                         "speak_default": self.speak_default,
                         "stats": self.stats,
+                        # ★ v2.9.35：大屏看板的配置**不复制**，改成实时回查所属服务实例 ——
+                        #   否则桌面端改了配色，网页得等重启服务才生效（实测踩过）。
+                        "wall_owner": self,
                         # ★ v2.9.3：页面「语音：」下拉的默认项（解析后的真实包名）
                         "voice_set": voice_set_of(
                             resolve_voice_dir(self.voice_set, self.base_dir))})
