@@ -41,6 +41,13 @@ import threading
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
+# ---------------------------------------------------------------- 版本号
+# ★ v2.9.38：引擎自己报版本。以前 `--version` 只报「番种多少、牌张多少」，
+#   偏偏不报自己是哪个版本 —— 用户拿 exe 来问「我这是不是最新的」，答不上来。
+#   这个常量只描述「引擎这一层的版本」，与主程序 __version__ 保持一致；
+#   主程序那边有 __version__，引擎这边没有，所以单独立一个。
+APP_VERSION = "2.9.48"
+
 # ---------------------------------------------------------------- 牌编码
 
 CN_NUM = "一二三四五六七八九"
@@ -312,6 +319,9 @@ class Score:
     ok: bool = False        # base >= 8
     message: str = ""
     pattern: str = ""       # 命中的牌型说明（如「七对」「组合龙+…」）
+    # ★ v2.9.39：落选番种（本来成立、但被更高番种「不计」覆盖掉了）
+    # 每项 (被不计的番种名, 它的番数, 因哪个番种不计)，用来回答「为什么没算 X 番」
+    dropped: List[Tuple[str, int, str]] = field(default_factory=list)
 
     @property
     def fan_map(self) -> Dict[str, int]:
@@ -321,6 +331,11 @@ class Score:
         if not self.fans:
             return "无番种"
         return "、".join("%s%d番" % (n, v) for n, v in self.fans)
+
+    @property
+    def explain_text(self) -> str:
+        """★ v2.9.39：把落选番种说成人话（没有落选就是空串）"""
+        return _explain_dropped(self.dropped)
 
 
 @dataclass
@@ -1590,8 +1605,15 @@ class MahjongFanCalculator:
             self.excludes[name] = list(dict.fromkeys(list(cur) + list(extra)))
 
     # ---------- 排除处理 ----------
-    def handle_exclusions(self, fans: Dict[str, int]) -> Dict[str, int]:
-        """按「不计」表剔除被更高分番种覆盖的番种"""
+    def handle_exclusions(self, fans: Dict[str, int],
+                          dropped: Optional[List[Tuple[str, int, str]]] = None
+                          ) -> Dict[str, int]:
+        """按「不计」表剔除被更高分番种覆盖的番种
+
+        ★ v2.9.39：传入 `dropped` 列表时，顺便把「哪个番种因哪个番种而不计」
+        记下来（(被不计的番种, 番数, 造成它不计的番种)），用来回答用户的
+        「为什么没算 X 番」。不传就只是剔除，行为与以前完全一致。
+        """
         out = dict(fans)
         changed = True
         while changed:
@@ -1604,7 +1626,9 @@ class MahjongFanCalculator:
                         continue
                     if (name, bad) in EXCLUDE_DROP:
                         continue
-                    out.pop(bad)
+                    val = out.pop(bad)
+                    if dropped is not None:
+                        dropped.append((bad, val, name))
                     changed = True
         return out
 
@@ -1682,11 +1706,14 @@ class MahjongFanCalculator:
                       all_counts=total,
                       win_tile=win_tile, opts=opts, single_wait=single)
             fans = collect_fans(ctx)
-            fans = self.handle_exclusions(fans)
+            # ★ v2.9.39：记下被「不计」掉的番种，供 UI 解释「为什么没算 X 番」
+            dropped: List[Tuple[str, int, str]] = []
+            fans = self.handle_exclusions(fans, dropped)
             base = sum(fans.values())
             if base == 0:
                 fans = {"无番和": 8}
                 base = 8
+                dropped = []      # 无番和兜底时，落选清单没有意义
             flowers = max(0, int(opts.flowers or 0))
             total_fan = base + flowers * self.fan_values.get("花牌", 1)
             res = Score(
@@ -1696,6 +1723,7 @@ class MahjongFanCalculator:
                 total=total_fan, base=base, flowers=flowers,
                 ok=base >= 8,
                 pattern=(d.tag or ("组合龙" if d.long_dragon else "基本牌型")),
+                dropped=sorted(dropped, key=lambda t: (-t[1], t[0])),
             )
             if best is None or res.total > best.total:
                 best = res
@@ -2476,7 +2504,26 @@ def _score_to_dict(s: Score) -> Dict[str, object]:
         "text": s.text(),
         "pattern": s.pattern,
         "message": s.message,
+        # ★ v2.9.39：落选番种（成立但被「不计」覆盖），用来解释「为什么没算 X 番」
+        "dropped": [{"name": n, "fan": v, "by": by} for n, v, by in s.dropped],
+        "explain": _explain_dropped(s.dropped),
     }
+
+
+def _explain_dropped(dropped: Sequence[Tuple[str, int, str]]) -> str:
+    """把落选番种说成人话，例如：
+    「因清龙不计：老少副1番、喜相逢1番」
+    """
+    if not dropped:
+        return ""
+    groups: Dict[str, List[str]] = {}
+    for name, val, by in dropped:
+        groups.setdefault(by, []).append("%s%d番" % (name, val))
+    parts = []
+    for by in sorted(groups, key=lambda k: (-sum(
+            1 for n, v, b in dropped if b == k), k)):
+        parts.append("因%s不计：%s" % (by, "、".join(groups[by])))
+    return "；".join(parts)
 
 
 def _score_text(s: Score, header: str = "") -> str:
@@ -2492,6 +2539,11 @@ def _score_text(s: Score, header: str = "") -> str:
     lines.append("番种：")
     for n, v in s.fans:
         lines.append("  %3d  %s" % (v, n))
+    # ★ v2.9.39：把「本来成立、但被不计掉」的番种也列出来，回答「为什么没算 X 番」
+    if s.dropped:
+        lines.append("未计（被更高番种覆盖）：")
+        for n, v, by in s.dropped:
+            lines.append("  %3d  %s（因%s不计）" % (v, n, by))
     if s.message:
         lines.append(s.message)
     return "\n".join(lines)
@@ -2573,6 +2625,8 @@ def cli_main(argv=None) -> int:
             sets = voice_sets(args.dir)
             cur = resolve_voice_dir(args.voice_set, args.dir)
             out({"ok": True, "name": "国标麻将算番器", "engine": "mahjong_core",
+                 # ★ v2.9.38：版本号。以前这里没有，用户/脚本没法确认手上是哪一版
+                 "version": APP_VERSION,
                  "fans": len(getattr(calc, "fan_values", {})), "tiles": len(TILE_CODES),
                  "rules": os.path.basename(getattr(calc, "rules_path", "")) or "（内置默认）",
                  # ★ v2.9.0 读番：音频目录 + 能不能出声（别的程序据此决定要不要自己放音）
@@ -2584,8 +2638,8 @@ def cli_main(argv=None) -> int:
                  "voice_sets": [{"name": s["name"], "label": voice_set_label(str(s["name"])),
                                  "clips": s["clips"]} for s in sets],
                  "voice_can_play": VoicePlayer.available()},
-                "国标麻将算番器 · 引擎 mahjong_core，番种 %d，牌张 %d；读番语音包 %s（%s）"
-                % (len(getattr(calc, "fan_values", {})), len(TILE_CODES),
+                "国标麻将算番器 v%s · 引擎 mahjong_core，番种 %d，牌张 %d；读番语音包 %s（%s）"
+                % (APP_VERSION, len(getattr(calc, "fan_values", {})), len(TILE_CODES),
                    voice_set_label(voice_set_of(cur)), cur or
                    "未找到《%s》目录，可用 --dir 指定" % VOICE_DIR_NAME))
             return 0

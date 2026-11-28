@@ -48,6 +48,10 @@ _diag_upd.py
 # —— 设计与截图素材（含微信截图，不入库）——
 软件设计构图/
 
+# —— 个人二维码（与项目无关，不入库）——
+小程序码/
+小程序 普通二维码/
+
 # —— 编辑器 / 本机工具痕迹 ——
 .vscode/
 .workbuddy/
@@ -57,14 +61,3 @@ _diag_upd.py
 Thumbs.db
 desktop.ini
 
-# ---- 数据库文件（绝不入库）----
-*.db
-*.db-shm
-*.db-wal
-*.db-journal
-*.sqlite
-*.sqlite3
-*.sqlite-shm
-*.sqlite-wal
-*.db3
-Thumbs.db

@@ -157,7 +157,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QTextBrowser, QToolButton, QVBoxLayout, QWidget,
 )
 
-__version__ = "2.9.35"
+__version__ = "2.9.48"
 APP_NAME = "国标麻将算番器"                 # 中文名（界面显示，保持不变）
 APP_NAME_EN = "Mahjong_Calculator"        # ★ v2.7.3 英文名：文件名 / exe / 打包目录统一用它
 SETTINGS_FILE = "mahjong_settings.json"
@@ -490,7 +490,12 @@ except Exception as _exc:       # noqa: BLE001
                           "wall_palette", "wall_palettes",
                           "wall_geo", "wall_maximized",
                           # ★ v2.9.33 新增：五档颜色分配口径 / 第一名反色高亮
-                          "wall_score_mode", "wall_highlight_first")
+                          "wall_score_mode", "wall_highlight_first",
+                          # ★ v2.9.37 新增：倒计时（显示在标题「今日战绩」右边）
+                          "wall_cd_minutes", "wall_cd_state",
+                          "wall_cd_remain_ms", "wall_cd_saved_at",
+                          # ★ v2.9.45 新增：倒计时字号 = 标题字号 × 本值（1.0=等大）
+                          "wall_cd_font_scale")
 
     def wall_default_config_() -> dict:     # type: ignore[misc]
         """兜底：看板模块导入不了时，设置项也要有默认值可存"""
@@ -500,7 +505,10 @@ except Exception as _exc:       # noqa: BLE001
                 "wall_stroke": 0.08, "wall_stroke_color": "#FFFFFF",
                 "wall_palette": "classic",
                 "wall_palettes": {}, "wall_geo": [], "wall_maximized": False,
-                "wall_score_mode": "rank", "wall_highlight_first": True}
+                "wall_score_mode": "rank", "wall_highlight_first": True,
+                "wall_cd_minutes": 0, "wall_cd_state": "idle",
+                "wall_cd_remain_ms": 0, "wall_cd_saved_at": 0,
+                "wall_cd_font_scale": 1.0}
 
     def wall_normalize_config_(cfg) -> dict:    # type: ignore[misc]
         out = wall_default_config_()
@@ -2055,6 +2063,14 @@ class MahjongFanWindow(QMainWindow):
             "把以前同一次算番折腾出来的多条记录合成一条（先预览要删哪些，再决定删）")
         self.btn_stats_dedupe.clicked.connect(self._stats_dedupe_history)
         top.addWidget(self.btn_stats_dedupe)
+        # ★ v2.9.37：一键清除（今天 / 本月 / 本年 / 指定日·月·年 / 全部）
+        #   跟「清理重复…」放一起 —— 两个都是「先把数据看一遍、再决定删不删」的操作。
+        self.btn_stats_clear = QPushButton("🧹 一键清除…")
+        self.btn_stats_clear.setToolTip(
+            "按范围整批删掉历史成绩：今天 / 本月 / 本年 / 指定某天·某月·某年 / 全部。\n"
+            "每改一次范围都先算给你看「删多少条、多少手、多少番」，确认后才真删（不可恢复）。")
+        self.btn_stats_clear.clicked.connect(self._stats_clear_data)
+        top.addWidget(self.btn_stats_clear)
         # ★ v2.9.22：两张表显示哪几列，直接在这里勾（勾完立刻生效 + 自动保存）
         self.btn_stats_cols = QPushButton()
         self.btn_stats_cols.setToolTip(
@@ -2891,6 +2907,30 @@ class MahjongFanWindow(QMainWindow):
         dlg.exec()
         self._stats_refresh(force=True)
         self._stats_init_days()
+
+    def _stats_clear_data(self) -> None:
+        """★ v2.9.37：一键清除（今天 / 本月 / 本年 / 指定日·月·年 / 全部）
+
+        对话框本身体在 `mahjong_clear_dialog.py`，这里只负责开窗和事后刷新。
+        清完必须三件事都做：① 统计页重算 ② 日期下拉重建（可能那些天已经没了）
+        ③ 看板/网页版跟着变 —— 它们每 2 秒自己读库，不用额外通知。
+        """
+        if self.stats is None:
+            return
+        try:
+            from mahjong_clear_dialog import StatsClearDialog as _ClearDlg
+        except Exception:                  # noqa: BLE001 —— 少个文件不能连累统计页
+            traceback.print_exc()
+            QMessageBox.warning(
+                self, "打不开",
+                "没能加载「一键清除」窗口（mahjong_clear_dialog.py）。\n"
+                "程序文件可能不完整，重新解压一份完整的再试。")
+            return
+        dlg = _ClearDlg(self, self.stats)
+        dlg.exec()
+        if dlg.changed():
+            self._stats_refresh(force=True)
+            self._stats_init_days()
 
     def _stats_open_detail(self) -> None:
         """双击聚合表某一行 → 看那个人的逐手明细（复用既有窗口）"""
@@ -4327,6 +4367,10 @@ class MahjongFanWindow(QMainWindow):
             self._add_fan_item("无番种")
         if s.pattern:
             self._add_fan_item("牌型：%s" % s.pattern)
+        # ★ v2.9.39：本来成立、但被「不计」覆盖的番种也列出来（灰色），
+        # 回答「为什么没算 X 番」——不列的话用户只能看到少算了，看不出原因。
+        for name, value, by in getattr(s, "dropped", []):
+            self._add_fan_item("%d番    %s（因%s不计）" % (value, name, by), "#8a8a8a")
         if s.message:
             self._add_fan_item(s.message, "#c0392b")
         # ★ v2.9.0 读番：合计出番以后念出来（勾了「读番」才念；同一个番数不重复念）
@@ -5349,6 +5393,12 @@ class StatsDetailDialog(QDialog):
             for i, r in enumerate(rows):
                 for c, k in enumerate(self.cols):
                     item = QTableWidgetItem(self._cell_text(k, r))
+                    # ★ v2.9.38：番数/底分/番种数/门清这类列右对齐。
+                    #   以前这里只挂了 tooltip、没设对齐，明细表的番数一律左对齐，
+                    #   一列数字左对齐就没法纵向比大小（用户 v2.9.x 反馈过「明细番数列没右对齐」）。
+                    #   口径与统计页「按人聚合表」(fan/cnt/reach)、「最近记录表」(fan/base/fans_n) 保持一致。
+                    if k in ("fan", "base", "reach", "fans_n"):
+                        item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                     tip = self._cell_tip(k, r)
                     if tip:
                         item.setToolTip(tip)

@@ -65,6 +65,17 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
 #   NameError（2026-11-24 踩过一次同类坑：mahjong_wall.py 漏导入 QPixmap）。
 from mahjong_wall_core import (  # noqa: F401
     BG,
+    CD_COLOR_RUN,
+    CD_FONT_SCALE_DEFAULT,
+    CD_FONT_SCALE_MAX,
+    CD_FONT_SCALE_MIN,
+    CD_MINUTES_CHOICES,
+    CD_MINUTES_ITEMS,
+    CD_STATE_DONE,
+    CD_STATE_IDLE,
+    CD_STATE_PAUSED,
+    CD_STATE_RUNNING,
+    CD_TICK_MS,
     DEFAULT_GEO_SIZE,
     DEFAULT_STEPS,
     FONT_CANDIDATES,
@@ -93,9 +104,13 @@ from mahjong_wall_core import (  # noqa: F401
     build_labels,
     clear_glyph_cache,
     contrast_on_black,
+    countdown_color,
+    countdown_next,
+    countdown_visible,
     day_text,
     default_config,
     draw_outlined,
+    fmt_countdown,
     fmt_ts,
     group_by_ip,
     ip_label,
@@ -106,6 +121,7 @@ from mahjong_wall_core import (  # noqa: F401
     resolve_palette_name,
     resolve_steps,
     resolve_stroke_color,
+    resume_countdown,
     score_color,
     stroke_setting,
 )
@@ -132,12 +148,46 @@ class WallBoardWidget(QWidget):
         self.rows: List[Dict] = []          # 原始记录（ts_ms 倒序）
         self.msg = ""                       # 库不可用 / 读失败时的说明
         self._font_family = pick_font_family()
+        # ---- 倒计时（★ v2.9.37）----
+        # 画布只负责「画」；状态由 WallBoardDialog 的 QTimer 推进后灌进来。
+        # 这样离屏渲染截图（_scaffold/_wall_final_shot.py）也能直接造一个假状态出图，
+        # 不用等真实时间流逝。
+        self.cd_state = CD_STATE_IDLE
+        self.cd_remain_ms = 0
+        self.cd_blink_on = True
+        self._cd_from_cfg()
         self.setAutoFillBackground(False)
         self.setAttribute(Qt.WA_OpaquePaintEvent, True)
+
+    # -------------------------------------------------- 倒计时（★ v2.9.37）
+    def _cd_from_cfg(self) -> None:
+        """从 cfg 里取一次倒计时状态（开窗时 / 设置被改时 / 离屏出图时都用它）
+
+        ★ 为什么要这一步：倒计时的**真值**存在 cfg 里（会落盘），
+          画布自己只是显示器。没有这一步，新建一个 WallBoardWidget 就永远是
+          idle + 00:00:00，`_scaffold` 里的截图脚本也就没法造「跑到一半」的画面。
+        """
+        self.cd_state = str(self.cfg.get("wall_cd_state") or CD_STATE_IDLE)
+        self.cd_remain_ms = max(0, int(self.cfg.get("wall_cd_remain_ms") or 0))
+        self.cd_blink_on = True
+
+    def set_countdown(self, state: str, remain_ms: int,
+                      blink_on: bool = True) -> None:
+        """灌入倒计时状态并重绘（只在值真的变了时重绘，省掉无谓的整屏重排）"""
+        st = str(state or CD_STATE_IDLE)
+        rm = max(0, int(remain_ms or 0))
+        bl = bool(blink_on)
+        if (st, rm, bl) == (self.cd_state, self.cd_remain_ms, self.cd_blink_on):
+            return
+        self.cd_state = st
+        self.cd_remain_ms = rm
+        self.cd_blink_on = bl
+        self.update()
 
     # -------------------------------------------------- 外部灌数据
     def set_config(self, cfg: Optional[Dict]) -> None:
         self.cfg = normalize_config(cfg)
+        self._cd_from_cfg()
         self.update()
 
     def set_data(self, day: str, rows: List[Dict], msg: str = "") -> None:
@@ -167,7 +217,13 @@ class WallBoardWidget(QWidget):
         #   现在复用上半算好的映射，保证一台上机器全屏只有一个名字。
         name_of = dict(zip(ips, labels))
         n = int(cfg["wall_recent_n"])
-        recs = self.rows[:max(1, n)]
+        # ★ v2.9.36：下半必须和上半用**同一套筛选**。原来上半被
+        #   wall_hide_unknown / wall_ips 过滤掉的人，下半照样原样显示，
+        #   于是出现「上半：今日暂无记录 / 下半：一堆记录」的自相矛盾（实机截图复现）。
+        keep = {p["ip"] for p in people}
+        pool = [r for r in self.rows
+                if str(r.get("ip") or "").strip() in keep]
+        recs = pool[:max(1, n)]
         out = []
         for r in recs:
             ip = str(r.get("ip") or "").strip()
@@ -217,10 +273,9 @@ class WallBoardWidget(QWidget):
         # ---- 标题行（+ 一行小字副标题：共几手 / 几番 / 几个 IP）
         title_h = max(22.0, inner.height() * 0.082)
         title_rect = QRectF(inner.left(), inner.top(), inner.width(), title_h)
-        head_text, sub_text = self._title_texts(people, recs)
-        draw_outlined(painter, head_text, title_rect,
-                      make_font(self._font_family, title_h * 0.62, True),
-                      TITLE_COLOR, "center", ratio=ratio, stroke=stroke)
+        date_text, head_text, sub_text = self._title_texts(people, recs)
+        self._paint_title_line(painter, date_text, head_text,
+                               title_rect, ratio, stroke)
 
         sub_h = max(0.0, min(title_h * 0.46, inner.height() * 0.05)) if sub_text else 0.0
         if sub_h >= 9.0:
@@ -292,8 +347,96 @@ class WallBoardWidget(QWidget):
             score_colors=rec_colors,
             head_px=sec_head_px, steps=steps, ratio=ratio, stroke=stroke)
 
+    # -------------------------------------------------- 标题行（含倒计时）
+    def _paint_title_line(self, painter: QPainter, date_text: str,
+                          head_text: str, rect: QRectF, ratio: float,
+                          stroke: str) -> None:
+        """画「日期 · 倒计时 · 今日战绩」这一行；开了倒计时就插在中间
+
+        ★ 为什么要自己和宽度、不只靠 align="center"：
+          三段文字必须**当作一个整体**居中，各自居中就会一左一右各占半屏，
+          中间空一大块，看着像三个标题。
+          所以先量出三段文字的实际宽度，算出整体起点，再各自左对齐画过去。
+        ★ v2.9.47：倒计时挪到「今日战绩」前面。
+        ★ v2.9.48：用户说「日期 倒计时 今日战绩」—— 倒计时要插在日期与标题**中间**，
+          所以把日期与标题拆成两段，顺序变成日期 → 倒计时 → 标题。
+        ★ 倒计时不可见时（wall_cd_minutes=0）走的还是**原来那一行代码**，
+          行为与 v2.9.36 完全一致，老用户看不出任何差别。
+        """
+        title_h = rect.height()
+        px_title = title_h * 0.62
+        cd_text = ""
+        if countdown_visible(self.cfg):
+            cd_text = fmt_countdown(self.cd_remain_ms)
+        if not cd_text:
+            # 没开倒计时：两段拼回一整串、走原来的居中画法（与 v2.9.36 逐像素一致）
+            joined = ("%s  %s" % (date_text, head_text)) if date_text else head_text
+            draw_outlined(painter, joined, rect,
+                          make_font(self._font_family, px_title, True),
+                          TITLE_COLOR, "center", ratio=ratio, stroke=stroke)
+            return
+        # 倒计时字号 = 标题字号 × wall_cd_font_scale（★ v2.9.45）
+        # v2.9.37~v2.9.44 写死 0.78（比标题小一档），用户反馈「字体太小」，
+        # 改成默认 1.0 完全等大、并允许在「上墙设置 → ⏱ 倒计时」里调。
+        try:
+            _sc = float(self.cfg.get("wall_cd_font_scale", CD_FONT_SCALE_DEFAULT))
+        except Exception:   # noqa: BLE001
+            _sc = CD_FONT_SCALE_DEFAULT
+        if _sc != _sc:      # nan
+            _sc = CD_FONT_SCALE_DEFAULT
+        _sc = max(CD_FONT_SCALE_MIN, min(CD_FONT_SCALE_MAX, _sc))
+        px_cd = max(9.0, px_title * _sc)
+        gap = px_title * 0.45
+
+        def _measure() -> None:
+            """量三段宽度 + 算总宽。尺寸变了就重量一次（缩放后）。"""
+            nonlocal px_title, px_cd, gap, f_date, f_cd, f_title, w1, w2, w3, total
+            f_date = make_font(self._font_family, px_title, True)
+            f_cd = make_font(self._font_family, px_cd, True)
+            f_title = make_font(self._font_family, px_title, True)
+            w1 = QFontMetricsF(f_date).horizontalAdvance(date_text)
+            w2 = QFontMetricsF(f_cd).horizontalAdvance(cd_text)
+            w3 = QFontMetricsF(f_title).horizontalAdvance(head_text)
+            n_gap = 2 if date_text else 1
+            total = w1 + w2 + w3 + gap * n_gap
+
+        f_date = f_cd = f_title = None
+        w1 = w2 = w3 = total = 0.0
+        _measure()
+        # 窗口很窄（比如 420px 宽）时三段加起来会溢出 → 整体等比缩小，不截断
+        if total > rect.width() and total > 0:
+            k = max(0.45, rect.width() / total)
+            px_title = max(10.0, px_title * k)
+            px_cd = max(9.0, px_cd * k)
+            gap = px_title * 0.45
+            _measure()
+        x0 = rect.left() + max(0.0, (rect.width() - total) / 2.0)
+        # ★ 绘制顺序也要跟着排 —— 两段都带描边（draw_outlined 先画描边再画填充），
+        # 后画的会盖住前一段描边溢出的部分；只改 x 不改顺序会被盖掉一点。
+        cd_color = countdown_color(self.cd_remain_ms, self.cd_state,
+                                   self.cd_blink_on)
+        x = x0
+        if date_text:
+            draw_outlined(painter, date_text,
+                          QRectF(x, rect.top(), w1, title_h),
+                          f_date, TITLE_COLOR, "left", ratio=ratio, stroke=stroke)
+            x += w1 + gap
+        draw_outlined(painter, cd_text,
+                      QRectF(x, rect.top(), w2, title_h),
+                      f_cd, cd_color, "left", ratio=ratio, stroke=stroke)
+        x += w2 + gap
+        draw_outlined(painter, head_text,
+                      QRectF(x, rect.top(), w3, title_h),
+                      f_title, TITLE_COLOR, "left", ratio=ratio, stroke=stroke)
+
     # -------------------------------------------------- 标题文字
     def _title_texts(self, people: List[Dict], recs: List[Dict]):
+        """返回 (date_text, title_text, sub_text)
+
+        ★ v2.9.48：从「日期 + 今日战绩」一整串拆成两段 —— 因为倒计时要插在两者中间，
+          用户要的顺序是「日期 倒计时 今日战绩」。拆开才能各自量宽、各自着色（日期与标题同色，
+          倒计时金色）。两段拼回来就是原来那串，所以信息一点没少。
+        """
         d = day_text(self.day)
         # ★ day 为空 = 「全部日期」，那不是今天；只有日期真的等于今天才算今日
         _day = str(self.day or "").strip()
@@ -301,7 +444,8 @@ class WallBoardWidget(QWidget):
         total_hands = sum(int(p["cnt"]) for p in people)
         total_fan = sum(int(p["fan"]) for p in people)
         # 「全部日期」和「今日战绩」不能同时出现（自相矛盾）；只有真的是今天才写「今日」
-        title = ("%s  今日战绩" % d) if is_today else ("%s  战绩" % d)
+        date_text = d
+        title_text = "今日战绩" if is_today else "战绩"
         if total_hands:
             sub = "共 %d 手 · %d 番 · %d 个 IP" % (total_hands, total_fan, len(people))
         else:
@@ -309,7 +453,7 @@ class WallBoardWidget(QWidget):
             sub = ""
         if self.msg:
             sub = self.msg
-        return title, sub
+        return date_text, title_text, sub
 
     # -------------------------------------------------- 表头
     def _up_headers(self) -> List[str]:
@@ -344,7 +488,9 @@ class WallBoardWidget(QWidget):
             head_h = max(16.0, min(rect.height() * 0.22, rect.height() * 0.5))
             head_px = max(11.0, min(head_h * 0.62, 90.0))
         else:
-            head_h = max(16.0, min(rect.height() * 0.34, float(head_px) / 0.62))
+            # ★ v2.9.36：0.34 → 0.22。分区矮的时候表头曾占掉三分之一高度，
+            #   看起来比正文还抢眼（用户实机截图反馈「表头字号明显偏大」）。
+            head_h = max(16.0, min(rect.height() * 0.22, float(head_px) / 0.62))
         head_rect = QRectF(rect.left(), rect.top(), rect.width(), head_h)
         hf = make_font(self._font_family, head_px, True)
         for i, (txt, cr) in enumerate(zip(headers, cols)):
@@ -381,7 +527,17 @@ class WallBoardWidget(QWidget):
         if row_h < min_row:
             shown = max(1, int(area_h // min_row))
             row_h = area_h / shown
-        font_px = max(12.0, min(row_h * 0.66, 300.0))
+        # ★ v2.9.36 修字号失控（用户实机截图：字糊成一团、相邻行互相压）。
+        #   原来只有 300px 这一个上限：上半 2 行 / 下半 1 行时 row_h 能到
+        #   400+px，字号被算成 300px，一个「517」比 34% 的列还宽，直接压到隔壁格子。
+        #   根子在于「把一行拉去撑满整个分区」——所以先给**行高**封顶：
+        #   上限取表头字的 2.2 倍。这个倍数有讲究：
+        #     · 4 行及以上时 area_h/n 本来就小于它，上限不生效 → 保持 v2.9.31 的观感
+        #     · 只有 1~3 行这种「一行撑满半屏」的极端情况才被它按住
+        #   收紧到 1.15 试过，结果 1 行时字比表头还小、下面一大片黑，更难看。
+        row_h = min(row_h, max(float(head_px) * 2.2 / 0.66, min_row))
+        font_px = max(12.0, min(row_h * 0.66, float(head_px) * 2.2, 300.0))
+        font_px = self._fit_px(cells, cols, font_px)
         body_font = make_font(self._font_family, font_px)
         # 分数颜色：调用方（_paint_all）已经整列算好传进来。
         # ★ v2.9.33 起不再在本函数内逐个 score_color —— 因为「按名次分档」
@@ -456,6 +612,44 @@ class WallBoardWidget(QWidget):
                           MUTED, "right", ratio=ratio, stroke=stroke)
 
     # -------------------------------------------------- 列宽分配
+    def _fit_px(self, cells: List[List[str]], cols: List[QRectF],
+                px: float) -> float:
+        """把字号按**列宽**往下压（行高之外的第二个约束）
+
+        ★ v2.9.36 新增。只按行高算字号会出事：上半 2 行、下半 1 行时
+          row_h 能到 400+px，字号算到 300px 后「517」比 34% 的列还宽，
+          右边直接被推出屏幕、或者压到隔壁格子上（用户实机截图复现）。
+        """
+        if not cells or not cols:
+            return px
+        try:
+            ncol = min(len(cols), max(len(r) for r in cells))
+        except ValueError:
+            return px
+        px = float(px)
+        if ncol <= 0 or px <= 12.0:
+            return px
+        for _ in range(14):
+            fm = QFontMetricsF(make_font(self._font_family, px))
+            too_wide = False
+            for i in range(ncol):
+                limit = cols[i].width() * 0.92
+                if limit <= 0:
+                    continue
+                for row in cells:
+                    if i >= len(row):
+                        continue
+                    t = str(row[i] or "")
+                    if t and fm.horizontalAdvance(t) > limit:
+                        too_wide = True
+                        break
+                if too_wide:
+                    break
+            if not too_wide or px <= 12.0:
+                break
+            px = max(12.0, px * 0.92)
+        return px
+
     def _col_rects(self, rect: QRectF, ncols: int) -> List[QRectF]:
         """三列比例：IP 42% / 中间 24% / 分数 34%（分数右对齐，个位天然对齐）"""
         if ncols <= 1:
@@ -562,7 +756,48 @@ class WallBoardDialog(QDialog):
                 "QPushButton:hover{background:#1e2c3a;}")
             b.clicked.connect(slot)
             bl.addWidget(b)
+        # ---- 倒计时控件（★ v2.9.37）：时长 + 开始 / 暂停 / 重置 ----
+        # 放在「关闭」之前不合适（关闭要留在最右），所以插在日期下拉后面那一段的
+        # 末尾之前 —— 这里用 addWidget 顺序把三键放在「关闭」左边。
+        self.cmb_cd = QComboBox()
+        self.cmb_cd.setToolTip(
+            "倒计时时长（显示在标题「今日战绩」右边）。选「关闭倒计时」就完全不显示")
+        for v, lab in CD_MINUTES_ITEMS:
+            self.cmb_cd.addItem(lab, v)
+        self.cmb_cd.setStyleSheet(
+            "QComboBox{background:#16202b;color:#d7e3ee;border:1px solid #24313f;"
+            "border-radius:4px;padding:3px 6px;}"
+            "QComboBox QAbstractItemView{background:#16202b;color:#d7e3ee;"
+            "selection-background-color:#24313f;}")
+        self.cmb_cd.currentIndexChanged.connect(self._cd_minutes_changed)
+        bl.addWidget(self.cmb_cd)
+        for attr, text, tip, slot in (
+            ("btn_cd_start", "▶ 开始", "开始倒计时（暂停后点它就接着走）",
+             self._cd_start_clicked),
+            ("btn_cd_pause", "⏸ 暂停", "暂停倒计时（剩余时间会留着）",
+             self._cd_pause_clicked),
+            ("btn_cd_reset", "↺ 重置", "回到满格待开始（归零后点它再来一轮）",
+             self._cd_reset_clicked),
+        ):
+            b = QPushButton(text)
+            b.setToolTip(tip)
+            b.setStyleSheet(
+                "QPushButton{background:#16202b;color:#d7e3ee;border:1px solid #24313f;"
+                "border-radius:4px;padding:4px 8px;}"
+                "QPushButton:hover{background:#1e2c3a;}"
+                "QPushButton:disabled{color:#4a5a68;}")
+            b.clicked.connect(slot)
+            setattr(self, attr, b)
+            bl.addWidget(b)
         lay.addWidget(self.bar)
+
+        # ---- 倒计时（★ v2.9.37）----
+        # 用户要的是「1 小时 / 2 小时 / 3 小时 可选，手动开始/暂停/重置」。
+        # 这三个控件跟着底栏走，全屏时一起隐藏 —— 但**表盘本身画在画布上**，
+        # 所以投屏全屏时照样看得到时间在走。
+        self._cd_thread_started = False
+        self._init_countdown_timer()
+        self._restore_countdown()
 
         self.timer = QTimer(self)
         self.timer.setInterval(2000)
@@ -571,6 +806,253 @@ class WallBoardDialog(QDialog):
         self.reload(force=True)
         # 几何放在最后应用：前面 self.resize(1100,720) 只是兜底初值
         self.apply_geometry()
+
+    # -------------------------------------------------- 倒计时（★ v2.9.37）
+    def _init_countdown_timer(self) -> None:
+        """建 250ms 的节拍器：推进剩余时间 + 驱动归零闪红
+
+        ★ 为什么不用 1 秒：归零后要「闪红」，500ms 一亮的节奏用 1 秒定时器做不出来；
+          250ms 既能精确到秒显示，也能让闪动看起来是闪，不是慢慢换色。
+          纯内存减法，不开线程 —— 它比每 2 秒查一次数据库还轻。
+        """
+        self._cd_timer = QTimer(self)
+        self._cd_timer.setInterval(CD_TICK_MS)
+        self._cd_timer.timeout.connect(self._cd_tick)
+        self._cd_blink = True
+        self._cd_last_played = False     # 归零音的「只响一次」闸门
+        self._cd_started_at = 0.0        # 这次 running 的起点（单调时钟，秒）
+        # ★ v2.9.44：本次 running 段的「起点剩余」。以前直接拿 cfg 里的
+        #   wall_cd_remain_ms 当基准，而 _cd_tick 又每拍把那个键改写成剩余值，
+        #   等于每拍在上一次剩余上再减一次总耗时 —— 2 小时的表 1 分钟就归零。
+        #   现在基准只在内存里，cfg 里的值退化为「落盘快照」，不再参与计算。
+        self._cd_base_ms = 0
+
+    def _cd_remaining_now(self) -> int:
+        """按内存里的锚点算「此刻还剩多少毫秒」（不读设置，不查库）"""
+        st = str(self.cfg.get("wall_cd_state") or CD_STATE_IDLE)
+        if st != CD_STATE_RUNNING or not self._cd_started_at:
+            # 非 running：cfg 里的值就是定格值（paused/done/idle 都走这里）
+            return int(self.cfg.get("wall_cd_remain_ms") or 0)
+        import time as _t
+        used = int(max(0.0, _t.monotonic() - self._cd_started_at) * 1000)
+        # ★ 只用内存基准减一次，绝不再读 cfg 里那个被 tick 改写的值
+        return max(0, int(self._cd_base_ms) - used)
+
+    def _restore_countdown(self) -> None:
+        """开窗时把上次落盘的倒计时接上（关掉看板再开还能接着走）"""
+        r = resume_countdown(self.cfg)
+        self.cfg["wall_cd_state"] = r["state"]
+        self.cfg["wall_cd_remain_ms"] = int(r["remain_ms"])
+        self._cd_sync_controls()
+        self._cd_push_to_board()
+        if r["state"] == CD_STATE_RUNNING:
+            import time as _t
+            self._cd_base_ms = int(r["remain_ms"])
+            self._cd_started_at = _t.monotonic()
+            self._cd_last_played = False
+            self._cd_timer.start()
+            self._cd_thread_started = True
+        elif r["state"] == CD_STATE_DONE:
+            # 关掉的时候已经归零了：重开就定格红，不再补播提示音（避免每次开窗都响）
+            self._cd_last_played = True
+            self.cd_state_save()
+
+    def cd_state_save(self) -> None:
+        """把倒计时状态交给宿主落盘（实时自动保存，由 _autosave_settings 防抖写文件）"""
+        cb = self._on_cfg_changed
+        if callable(cb):
+            cb(self.cfg)
+
+    def _cd_sync_controls(self) -> None:
+        """把 cfg 里的倒计时状态同步到三个控件上（不触发信号回环）"""
+        box = getattr(self, "cmb_cd", None)
+        if box is not None:
+            pos = box.findData(int(self.cfg.get("wall_cd_minutes") or 0))
+            if pos >= 0 and pos != box.currentIndex():
+                box.blockSignals(True)
+                try:
+                    box.setCurrentIndex(pos)
+                finally:
+                    box.blockSignals(False)
+            box.setEnabled(True)
+        st = str(self.cfg.get("wall_cd_state") or CD_STATE_IDLE)
+        on = countdown_visible(self.cfg)
+        if hasattr(self, "btn_cd_start"):
+            self.btn_cd_start.setEnabled(on and st in (CD_STATE_IDLE,
+                                                       CD_STATE_PAUSED,
+                                                       CD_STATE_DONE))
+            self.btn_cd_start.setText(
+                "▶ 继续" if st == CD_STATE_PAUSED else
+                ("↻ 重来" if st == CD_STATE_DONE else "▶ 开始"))
+        if hasattr(self, "btn_cd_pause"):
+            self.btn_cd_pause.setEnabled(on and st == CD_STATE_RUNNING)
+        if hasattr(self, "btn_cd_reset"):
+            self.btn_cd_reset.setEnabled(on and st != CD_STATE_IDLE)
+
+    def _cd_push_to_board(self) -> None:
+        """把当前倒计时灌给画布（画布自己判断要不要重绘）"""
+        st = str(self.cfg.get("wall_cd_state") or CD_STATE_IDLE)
+        self.board.set_countdown(st, self._cd_remaining_now(), self._cd_blink)
+
+    def _cd_tick(self) -> None:
+        """250ms 节拍：推进剩余、到点归零、闪红、放音、定期落盘"""
+        st = str(self.cfg.get("wall_cd_state") or CD_STATE_IDLE)
+        if st != CD_STATE_RUNNING:
+            # 非 running 时只负责闪红（done 才需要），其余直接停表省电
+            if st == CD_STATE_DONE:
+                self._cd_blink = not self._cd_blink
+                self._cd_push_to_board()
+            else:
+                self._cd_timer.stop()
+            return
+        remain = self._cd_remaining_now()
+        if remain <= 0:
+            self.cfg["wall_cd_state"] = CD_STATE_DONE
+            self.cfg["wall_cd_remain_ms"] = 0
+            self._cd_timer.stop()
+            self._cd_sync_controls()
+            self._cd_push_to_board()
+            self._cd_play_end()
+            self.cd_state_save()        # 归零点必须落盘：重开不能又从头开始
+            return
+        # 这里只更新「落盘快照」，不再当计算基准（基准是 _cd_base_ms）
+        self.cfg["wall_cd_remain_ms"] = remain
+        self._cd_blink = True if int(remain // 1000) != int(
+            (remain + CD_TICK_MS) // 1000) else self._cd_blink
+        self._cd_push_to_board()
+        self._cd_save_every()
+
+    def _cd_save_every(self) -> None:
+        """running 时每 5 秒落一次盘（不是每拍都写，免得把防抖保存打穿）"""
+        now = int(time.time())
+        last = int(self.cfg.get("_cd_last_save") or 0)
+        if now - last < 5:
+            return
+        self.cfg["_cd_last_save"] = now
+        self.cfg["wall_cd_remain_ms"] = self._cd_remaining_now()
+        self.cfg["wall_cd_saved_at"] = now
+        self.cd_state_save()
+
+    def _cd_play_end(self) -> None:
+        """归零提示音（只响一次；文件缺失/解码失败一律静默降级，绝不弹错）"""
+        if self._cd_last_played:
+            return
+        self._cd_last_played = True
+        try:
+            from PySide6.QtWidgets import QApplication
+            snd = getattr(QApplication.instance(), "_mahjong_cd_sound", None)
+            if snd is None:
+                snd = self._make_cd_sound()
+                try:
+                    QApplication.instance()._mahjong_cd_sound = snd
+                except Exception:       # noqa: BLE001
+                    pass
+            if snd is not None:
+                snd.play()
+                return
+        except Exception:       # noqa: BLE001 —— 放音失败不能影响看板
+            pass
+        # 兜底：winsound 同步阻塞 ~1 秒，放到线程里播，不卡画面
+        try:
+            import threading
+            import winsound
+            p = self._cd_sound_path()
+            if p:
+                threading.Thread(target=winsound.PlaySound,
+                                 args=(p, winsound.SND_FILENAME),
+                                 daemon=True).start()
+        except Exception:       # noqa: BLE001
+            pass
+
+    @staticmethod
+    def _cd_sound_path() -> Optional[str]:
+        """提示音路径：程序目录旁的 timer_end.mp3；找不到就算了（不是错误）"""
+        try:
+            base = os.path.dirname(os.path.abspath(__file__))
+        except Exception:       # noqa: BLE001
+            return None
+        for name in ("timer_end.mp3", "timer_end.wav"):
+            p = os.path.join(base, name)
+            if os.path.exists(p):
+                return p
+        return None
+
+    def _make_cd_sound(self):
+        """建一个 QSoundEffect（只建一次，重复建会每次重新解码文件）"""
+        p = self._cd_sound_path()
+        if not p:
+            return None
+        try:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtMultimedia import QSoundEffect
+            eff = QSoundEffect(self)
+            eff.setSource(QUrl.fromLocalFile(p))
+            eff.setVolume(1.0)
+            return eff
+        except Exception:       # noqa: BLE001
+            return None
+
+    # ---- 三个按钮 + 时长下拉
+    def _cd_minutes_changed(self, _i: int = -1) -> None:
+        mins = int(self.cmb_cd.currentData() or 0)
+        total = mins * 60 * 1000
+        self.cfg["wall_cd_minutes"] = mins
+        self.cfg["wall_cd_state"] = CD_STATE_IDLE
+        self.cfg["wall_cd_remain_ms"] = total
+        self.cfg["wall_cd_saved_at"] = 0
+        self._cd_base_ms = 0
+        self._cd_started_at = 0.0
+        self._cd_timer.stop()
+        self._cd_last_played = False
+        self._cd_blink = True
+        self._cd_sync_controls()
+        self._cd_push_to_board()
+        self.cd_state_save()
+
+    def _cd_start_clicked(self) -> None:
+        r = countdown_next(self.cfg)
+        self.cfg["wall_cd_state"] = r["state"]
+        self.cfg["wall_cd_remain_ms"] = int(r["remain_ms"])
+        self.cfg["wall_cd_saved_at"] = int(time.time())
+        self.cfg["_cd_last_save"] = int(time.time())
+        self._cd_last_played = False
+        self._cd_blink = True
+        import time as _t
+        self._cd_base_ms = int(r["remain_ms"]) if r["state"] == CD_STATE_RUNNING else 0
+        self._cd_started_at = _t.monotonic() if r["state"] == CD_STATE_RUNNING else 0.0
+        if r["state"] == CD_STATE_RUNNING:
+            self._cd_timer.start()
+        self._cd_sync_controls()
+        self._cd_push_to_board()
+        self.cd_state_save()
+
+    def _cd_pause_clicked(self) -> None:
+        if str(self.cfg.get("wall_cd_state")) != CD_STATE_RUNNING:
+            return
+        remain = self._cd_remaining_now()
+        self.cfg["wall_cd_state"] = CD_STATE_PAUSED
+        self.cfg["wall_cd_remain_ms"] = remain
+        self.cfg["wall_cd_saved_at"] = int(time.time())
+        self._cd_base_ms = 0
+        self._cd_started_at = 0.0
+        self._cd_timer.stop()
+        self._cd_sync_controls()
+        self._cd_push_to_board()
+        self.cd_state_save()
+
+    def _cd_reset_clicked(self) -> None:
+        total = int(self.cfg.get("wall_cd_minutes") or 0) * 60 * 1000
+        self.cfg["wall_cd_state"] = CD_STATE_IDLE
+        self.cfg["wall_cd_remain_ms"] = total
+        self.cfg["wall_cd_saved_at"] = 0
+        self._cd_base_ms = 0
+        self._cd_started_at = 0.0
+        self._cd_timer.stop()
+        self._cd_last_played = False
+        self._cd_blink = True
+        self._cd_sync_controls()
+        self._cd_push_to_board()
+        self.cd_state_save()
 
     # -------------------------------------------------- 数据
     def _fill_days(self) -> None:
@@ -619,8 +1101,20 @@ class WallBoardDialog(QDialog):
     def set_config(self, cfg: Optional[Dict]) -> None:
         old_geo = list(self.cfg.get("wall_geo") or [])
         old_max = bool(self.cfg.get("wall_maximized"))
-        self.cfg = normalize_config(cfg)
+        # ★ 倒计时以「本窗口正在跑的实时值」为准，不采用设置对话框带回来的旧值：
+        #   设置对话框里的 cfg 是它打开那一刻的快照，倒计时这期间已经走了几十秒，
+        #   直接采纳会让表盘往回跳一截（实测：切一次设置，时间倒退 20 秒）。
+        #   倒计时只在看板底栏上改，设置页本来就不该覆盖它。
+        live_cd = {k: self.cfg.get(k) for k in (
+            "wall_cd_minutes", "wall_cd_state", "wall_cd_remain_ms",
+            "wall_cd_saved_at")}
+        live_cd["wall_cd_remain_ms"] = self._cd_remaining_now()
+        nxt = normalize_config(cfg)
+        nxt.update({k: v for k, v in live_cd.items() if v is not None})
+        self.cfg = nxt
         self.board.set_config(self.cfg)
+        self._cd_sync_controls()        # 时长可能刚被改过 → 按钮可用状态跟着变
+        self._cd_push_to_board()        # 把「此刻」的剩余灌回画布
         # 窗口页改了尺寸/最大化 → 立刻作用到真窗口（用户点完就能看到）
         if (list(self.cfg.get("wall_geo") or []) != old_geo
                 or bool(self.cfg.get("wall_maximized")) != old_max):
@@ -820,6 +1314,19 @@ class WallBoardDialog(QDialog):
             pass
         try:
             self.timer.stop()
+        except Exception:       # noqa: BLE001
+            pass
+        # ★ 倒计时：关窗前把「此刻还剩多少」定死并落盘，
+        #   否则内存里那个 monotonic 锚点一丢，重开就不知道已经走过多久了。
+        try:
+            self.cfg["wall_cd_remain_ms"] = self._cd_remaining_now()
+            if str(self.cfg.get("wall_cd_state")) == CD_STATE_RUNNING:
+                self.cfg["wall_cd_saved_at"] = int(time.time())
+            self.cd_state_save()
+        except Exception:       # noqa: BLE001
+            pass
+        try:
+            self._cd_timer.stop()
         except Exception:       # noqa: BLE001
             pass
         super().closeEvent(event)

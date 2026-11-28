@@ -36,6 +36,10 @@ from typing import Dict, List, Optional, Tuple
 # 配色 / 分档 / 标签 / 时间格式化全部来自这里，保证与桌面大屏逐字一致。
 try:
     from mahjong_wall_core import (  # noqa: F401
+        CD_STATE_DONE,
+        CD_STATE_IDLE,
+        CD_STATE_PAUSED,
+        CD_STATE_RUNNING,
         SCORE_MODE_RANK,
         STROKE_DEFAULT,
         UNKNOWN_IP_TEXT,
@@ -43,11 +47,15 @@ try:
         auto_stroke_for_fill,
         build_labels,
         contrast_on_black,
+        countdown_color,
+        countdown_visible,
         day_text,
+        fmt_countdown,
         fmt_ts,
         group_by_ip,
         normalize_config,
         resolve_steps,
+        resume_countdown,
         stroke_setting,
     )
     CORE_IMPORT_ERROR: Optional[str] = None
@@ -56,6 +64,26 @@ except Exception as _exc:            # noqa: BLE001
     SCORE_MODE_RANK = "rank"         # type: ignore[assignment]
     STROKE_DEFAULT = 0.08            # type: ignore[assignment]
     UNKNOWN_IP_TEXT = "(未记录IP)"    # type: ignore[assignment]
+    CD_STATE_IDLE = "idle"           # type: ignore[assignment]
+    CD_STATE_RUNNING = "running"     # type: ignore[assignment]
+    CD_STATE_PAUSED = "paused"       # type: ignore[assignment]
+    CD_STATE_DONE = "done"           # type: ignore[assignment]
+
+    def countdown_visible(cfg):      # type: ignore[misc]
+        try:
+            return int((cfg or {}).get("wall_cd_minutes") or 0) > 0
+        except Exception:            # noqa: BLE001
+            return False
+
+    def fmt_countdown(ms):           # type: ignore[misc]
+        s = max(0, int(ms or 0)) // 1000
+        return "%02d:%02d:%02d" % (s // 3600, (s % 3600) // 60, s % 60)
+
+    def countdown_color(ms, state, blink_on=True):   # type: ignore[misc]
+        return "#FFD54A"
+
+    def resume_countdown(cfg, now=None):             # type: ignore[misc]
+        return {"state": CD_STATE_IDLE, "remain_ms": 0, "expired": False}
 
     def normalize_config(cfg):       # type: ignore[misc]
         return dict(cfg or {})
@@ -154,6 +182,9 @@ def build_payload(stats, day: str, cfg: Optional[Dict]) -> Dict:
         "stroke_width": STROKE_DEFAULT,
         "stroke_mode": "#FFFFFF",
         "people_note": "",
+        # ---- 倒计时（★ v2.9.37）：和桌面版共用同一份 cfg，口径完全一致 ----
+        "cd_show": False, "cd_scale": 1.0, "cd_state": CD_STATE_IDLE, "cd_text": "",
+        "cd_remain": 0, "cd_color": "#8FA3B5", "cd_color_done": "#FF5252",
     }
     if CORE_IMPORT_ERROR:
         out["ok"] = False
@@ -198,7 +229,11 @@ def build_payload(stats, day: str, cfg: Optional[Dict]) -> Dict:
         n = max(1, int(cfg.get("wall_recent_n") or 10))
     except Exception:                # noqa: BLE001
         n = 10
-    recs = rows[:n]
+    # ★ v2.9.36：下半必须和上半用**同一套筛选**，否则「上半今日暂无记录 /
+    #   下半一堆记录」自相矛盾（桌面版同一处 bug 一并修）
+    keep = {p["ip"] for p in people}
+    pool = [r for r in rows if str(r.get("ip") or "").strip() in keep]
+    recs = pool[:n]
 
     mode = str(cfg.get("wall_score_mode") or SCORE_MODE_RANK)
     p_colors = assign_colors([p["fan"] for p in people], steps, mode)
@@ -223,11 +258,36 @@ def build_payload(stats, day: str, cfg: Optional[Dict]) -> Dict:
     d = day_text(day)
     _day = str(day or "").strip()
     is_today = bool(_day) and _day == time.strftime("%Y-%m-%d")
-    out["title"] = ("%s  今日战绩" % d) if is_today else ("%s  战绩" % d)
+    # ★ v2.9.48：拆成「日期」与「今日战绩」两段 —— 倒计时要插在中间，
+    # 用户要的顺序是「日期 倒计时 今日战绩」。两段拼回来就是原来那串。
+    out["date"] = d
+    out["title"] = "今日战绩" if is_today else "战绩"
     total_hands = sum(p["cnt"] for p in out["people"])
     total_fan = sum(p["fan"] for p in out["people"])
     out["sub"] = ("共 %d 手 · %d 番 · %d 个 IP"
                   % (total_hands, total_fan, len(out["people"]))) if total_hands else ""
+
+    # ---- 倒计时（★ v2.9.37）
+    # ★ 为什么不服务端每 2 秒推一个新数字了事：网页刷新是 2 秒一次，靠它显示秒
+    #   会一顿一顿跳（00:00:05 → 00:00:07），和桌面版（本地 250ms 节拍）一眼能看出差别。
+    #   所以这里只发「服务端此刻算出的剩余毫秒」，浏览器收到后自己按本地时钟
+    #   250ms 往下扣；**每次刷新都重新对准**，误差只有一次网络往返，不会累积。
+    #   两边的时间口径仍然只有一份 —— 都来自 cfg 里的 wall_cd_* 四个键。
+    try:
+        # 字号倍数与开关无关：只要用户调过就带上，前端据此设 CSS 变量
+        try:
+            out["cd_scale"] = float(cfg.get("wall_cd_font_scale", 1.0) or 1.0)
+        except Exception:   # noqa: BLE001
+            out["cd_scale"] = 1.0
+        _cd = resume_countdown(cfg)
+        if countdown_visible(cfg) and _cd["state"] != CD_STATE_IDLE:
+            out["cd_show"] = True
+            out["cd_state"] = _cd["state"]
+            out["cd_remain"] = int(_cd["remain_ms"])
+            out["cd_text"] = fmt_countdown(_cd["remain_ms"])
+            out["cd_color"] = countdown_color(_cd["remain_ms"], _cd["state"], True)
+    except Exception:                # noqa: BLE001 —— 倒计时坏了不能连累看板
+        out["cd_show"] = False
     return out
 
 
@@ -254,11 +314,39 @@ WALL_HTML = r"""<!DOCTYPE html>
     padding:2.2vh 3.4vw;box-sizing:border-box}
   /* 描边：宽度用 em（= 桌面版的「字号 × 系数」，跟着各自字号自动缩放），
      颜色逐格 inline 给 —— 选「自动」时每一格按自己的字色算，所以颜色不统一是正常的 */
-  #title,#sub,.c{-webkit-text-stroke-width:__SW__em;
+  #title,#sub,#cd,.c{-webkit-text-stroke-width:__SW__em;
     -webkit-text-stroke-color:#fff;paint-order:stroke fill;
     -webkit-paint-order:stroke fill}
+  /* 倒计时（v2.9.37）：和标题同一行、跟在「今日战绩」后面
+     ★ 用 flex 把「标题 + 倒计时」当成一个整体居中 —— 各自 text-align:center 会
+       变成一左一右各占半屏，中间空一大块（桌面版同样踩过，见 _paint_title_line）
+     ★ tabular-nums 必须有：等宽数字，否则秒数每跳一下整体宽度就抖一下
+     ★★ v2.9.45 踩过的坑（两个，都真踩过）：
+        ①这几行原本写成 Python 风格的井号注释，而 CSS 不认井号 —— 预解析遇到
+          井号开头的片段，会把紧随其后的 #tline 选择器整条规则一并判为无效丢弃，
+          结果倒计时掉成独立块级行、靠左、字号退回默认（用户说的「位置不对、字体太小」）。
+        ②改成本块注释后，正文里又出现了「斜杠星号 空格 星号斜杠」这种字面写法，
+          那个星号斜杠把块注释提前闭合了，剩下的说明文字变成垃圾 CSS，
+          照样把 #tline 吞掉 —— 现象与①一模一样，差点误判成没改对。
+        教训：CSS 注释正文里绝不能出现能闭合自身的两个字符。 */
+  #tline{display:flex;align-items:baseline;justify-content:center;
+    gap:.7em;white-space:nowrap}
   #title{text-align:center;font-size:4.3vh;font-weight:700;letter-spacing:.05em;
     line-height:1.15;white-space:nowrap}
+  /* ★ v2.9.48：日期与标题同字号同颜色，只是中间隔了个倒计时。
+     没有倒计时时两段也会并排，中间留 gap，看起来就是「日期  今日战绩」。 */
+  #date{text-align:center;font-size:4.3vh;font-weight:700;letter-spacing:.05em;
+    line-height:1.15;white-space:nowrap}
+  /* ★ v2.9.45：倒计时字号 = 标题字号 × --cd-scale（默认 1.0 = 完全等大）。
+     用户要求「跟今日战绩的字体大小一样」，同时要能在上墙设置里自己调。
+     用 calc 而不是写死 vh —— 标题字号将来若改，这里自动跟着走。 */
+  #cd{font-size:calc(4.3vh * var(--cd-scale, 1));font-weight:700;
+    letter-spacing:.04em;line-height:1.15;
+    white-space:nowrap;font-variant-numeric:tabular-nums;
+    display:none;color:#FFD54A}
+  #cd.on{display:inline}
+  #cd.done{animation:cdblink 1s steps(1,end) infinite}
+  @keyframes cdblink{0%,49%{opacity:1}50%,100%{opacity:.28}}
   #sub{text-align:center;font-size:1.85vh;color:#8FA3B5;margin-top:.5vh;
     line-height:1.2;white-space:nowrap}
   #body{flex:1 1 0;display:flex;flex-direction:column;margin-top:1.1vh;min-height:0;
@@ -296,7 +384,11 @@ WALL_HTML = r"""<!DOCTYPE html>
     font-size:1.5vh;padding:.6vh 1vw;display:none}
 </style></head>
 <body><div id="wrap">
-  <div id="title">加载中…</div>
+  <div id="tline">
+    <div id="date"></div>
+    <div id="cd">00:00:00</div>
+    <div id="title">加载中…</div>
+  </div>
   <div id="sub"></div>
   <div id="body">
     <div class="sec" id="sup">
@@ -350,6 +442,9 @@ function fitRows(el, n){
   var h = el.clientHeight;
   if(!h) return;
   var fs = Math.max(9, Math.floor((h / n) * 0.62));
+  /* ★ v2.9.36：行数很少时不能把字放到撑满整屏。实机 1 行时算出 200px+，
+     一个分数几乎占去三分之一屏宽。上限按视口高度给（约 7.2vh）。 */
+  fs = Math.min(fs, Math.max(9, Math.floor(window.innerHeight * 0.072)));
   var rows = el.children;
   if(rows && rows.length){
     /* 每列取「全表最长的那段文字」来试宽，只看第一行会漏掉 4 位数分数 */
@@ -404,12 +499,99 @@ function buildSection(hdrEl, rowsEl, headers, items, emptyText,
   fitRows(rowsEl, items.length);
 }
 
+/* ---------------- 倒计时（★ v2.9.37）----------------
+   服务端每 2 秒只告诉我们「它算出来的剩余毫秒」，这里拿到后自己按本地时钟扣。
+   为什么不在服务端算好整串 HH:MM:SS 推过来：那样秒数会随 2 秒刷新一顿一顿跳
+   （00:00:05 → 00:00:07），跟桌面版平滑走的秒针一眼能看出不一样。
+   这份本地值每次刷新都会被服务端值重新对准，误差只有一次网络往返，不累积。 */
+var cdBase = 0;      // 收到数据那一刻的剩余毫秒
+var cdAt = 0;        // 收到数据那一刻的本地时间戳
+var cdState = "";
+var cdShow = false;
+var _cdTimer = null;
+
+function cdFmt(ms){
+  var s = Math.max(0, Math.floor(ms / 1000));
+  var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+  var p = function(v){ return (v < 10 ? "0" : "") + v; };
+  return p(h) + ":" + p(m) + ":" + p(ss);
+}
+
+function cdTick(){
+  var el = $("cd");
+  if(!cdShow || !el){ return; }
+  var remain = cdState === "running" ? (cdBase - (Date.now() - cdAt)) : cdBase;
+  if(remain < 0){ remain = 0; }
+  el.textContent = cdFmt(remain);
+  // 颜色分档与桌面版 countdown_color() 一致：待开始灰 / 暂停橙 / 5 分钟内橙 / 归零闪红
+  if(cdState === "idle"){ el.style.color = "#8FA3B5"; }
+  else if(cdState === "paused"){ el.style.color = "#FF9F43"; }
+  else if(remain <= 0){
+    cdState = "done";                 // 本地先归零，下一个刷新会被服务端值确认
+    el.classList.add("done");
+    el.style.color = "#FF5252";
+  }
+  else if(remain <= 300000){ el.style.color = "#FF9F43"; }
+  else { el.style.color = "#FFD54A"; }
+}
+
+function cdSetup(d){
+  var el = $("cd");
+  if(!el){ return; }
+  // ★ v2.9.45：字号倍数每次都刷（即使用户刚把倒计时关掉，下次开启要沿用）
+  var _sc = Number(d.cdScale);
+  if(!isFinite(_sc) || _sc <= 0){ _sc = 1; }
+  el.style.setProperty("--cd-scale", String(_sc));
+  cdShow = !!d.cdShow;
+  if(!cdShow){
+    el.classList.remove("on"); el.classList.remove("done");
+    if(_cdTimer){ clearInterval(_cdTimer); _cdTimer = null; }
+    return;
+  }
+  cdState = d.cdState || "idle";
+  cdBase = Number(d.cdRemain || 0);
+  cdAt = Date.now();
+  el.classList.add("on");
+  el.classList.toggle("done", cdState === "done");
+  if(cdState === "done"){ el.style.color = "#FF5252"; }
+  else if(cdState === "idle"){ el.style.color = "#8FA3B5"; }
+  else if(cdState === "paused"){ el.style.color = "#FF9F43"; }
+  else { el.style.color = "#FFD54A"; }
+  el.textContent = d.cdText || cdFmt(cdBase);
+  // 只有 done 需要 CSS 呼吸闪；running 靠 250ms 的 cdTick 平滑走秒
+  if(!_cdTimer){ _cdTimer = setInterval(cdTick, 250); }
+}
+
+/* 标题行「标题 + 倒计时」整体超宽时等比缩小（窄屏 / 手机竖屏）
+   ★ 桌面版用的是同一个思路（量宽度、整体缩），这里用 CSS 的 1fr 做不到
+      —— 缩小比例得知道实际宽度，所以还是得量一遍。 */
+function fitTitle(){
+  var line = $("tline"), t = $("title"), c = $("cd"), dt = $("date");
+  if(!line || !t){ return; }
+  t.style.fontSize = ""; if(c){ c.style.fontSize = ""; } if(dt){ dt.style.fontSize = ""; }
+  var avail = line.clientWidth;
+  if(!avail){ return; }
+  var need = line.scrollWidth;
+  if(need > avail && need > 0){
+    var k = avail / need;
+    var base = parseFloat(getComputedStyle(t).fontSize) || 16;
+    t.style.fontSize = (base * k) + "px";
+    /* ★ v2.9.48：三段都要缩，否则日期不跟着变小、整体不齐 */
+    if(dt){ dt.style.fontSize = (base * k) + "px"; }
+    if(c){ c.style.fontSize = ((parseFloat(getComputedStyle(c).fontSize) || 12) * k) + "px"; }
+  }
+}
+
 function render(d){
   lastData = d;
   if(d.msg){ $("err").style.display = "block"; $("err").textContent = d.msg; }
   else { $("err").style.display = "none"; }
+  $("date").textContent = d.date || "";
+  $("date").style.webkitTextStrokeColor = d.titleStroke || "#FFFFFF";
   $("title").textContent = d.title || "";
   $("title").style.webkitTextStrokeColor = d.titleStroke || "#FFFFFF";
+  cdSetup(d);
+  fitTitle();
   $("sub").textContent = d.sub || "";
   $("sub").style.webkitTextStrokeColor = d.subStroke || "#FFFFFF";
   var people = [], recs = [];
@@ -538,6 +720,7 @@ def render_wall_payload(stats, day: str, cfg: Optional[Dict],
     return {
         "ok": p.get("ok", True),
         "day": p.get("day", ""),
+        "date": p.get("date", ""),
         "title": p.get("title", ""),
         "sub": p.get("sub", ""),
         "msg": p.get("msg", ""),
@@ -556,4 +739,11 @@ def render_wall_payload(stats, day: str, cfg: Optional[Dict],
         "titleStroke": cell_stroke(TITLE_COLOR, mode),
         "subStroke": cell_stroke(MUTED, mode),
         "note": p.get("people_note", ""),
+        # ---- 倒计时（★ v2.9.37）：桌面版和网页版读的是同一份 cfg ----
+        "cdShow": bool(p.get("cd_show")),
+        "cdScale": float(p.get("cd_scale", 1.0) or 1.0),
+        "cdState": p.get("cd_state", CD_STATE_IDLE),
+        "cdText": p.get("cd_text", ""),
+        "cdRemain": int(p.get("cd_remain") or 0),
+        "cdColor": p.get("cd_color", MUTED),
     }

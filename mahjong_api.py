@@ -127,7 +127,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
-from mahjong_core import (BADGE_COLORS, BADGE_DARK_TEXT, BADGE_ORDER,  # noqa: E402
+from mahjong_core import (APP_VERSION, BADGE_COLORS, BADGE_DARK_TEXT,  # noqa: E402
+                          BADGE_ORDER,
                           BADGE_TEXTS, MahjongFanCalculator, Meld, Options,
                           TILE_CODES, VOICE_DIR_NAME, VOICE_SET_DEFAULT, VoicePlayer,
                           all_badges, code_of, count_voice_clips, find_voice_dir,
@@ -344,6 +345,10 @@ class Engine:
             "pattern": score.pattern,
             "message": score.message,
             "fans": [{"name": n, "value": v} for n, v in score.fans],
+            # ★ v2.9.39：落选番种 + 人话解释（回答「为什么没算 X 番」）
+            "dropped": [{"name": n, "value": v, "by": by}
+                        for n, v, by in getattr(score, "dropped", [])],
+            "explain": getattr(score, "explain_text", "") or "",
         }
 
     def score(self, body: dict) -> dict:
@@ -429,6 +434,8 @@ class Engine:
         voice_dir = self.voice_dir()
         sets = voice_sets(self.base_dir)
         return {"ok": True, "server": API_NAME, "app": APP_NAME,
+                # ★ v2.9.38：版本号。以前这里没有，Web 端没法显示「服务端是哪一版」
+                "version": APP_VERSION,
                 "engine_fans": len(getattr(self._calc, "fan_values", {})),
                 "rules_file": os.path.basename(rules) if rules else "",
                 "rules_loaded": bool(getattr(self._calc, "rules", None)),
@@ -710,6 +717,8 @@ main{padding:10px 10px 120px;max-width:760px;margin:0 auto}
 .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
 .tag{background:#eef3fb;border:1px solid #d6e3fa;border-radius:6px;padding:2px 6px;font-size:13px}
 .tag b{color:var(--blue);margin-right:4px}
+/* ★ v2.9.39：落选番种的解释区 */
+#explain .by{color:#9aa0a6;font-size:12px}
 .waits{display:flex;flex-wrap:wrap;gap:6px}
 .wait{border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px 6px;
  display:flex;flex-direction:column;align-items:center;min-width:52px;cursor:pointer}
@@ -773,6 +782,12 @@ select{font:inherit;font-size:var(--btn-fs);border:1px solid var(--line);backgro
 .ftile.sel{border-color:var(--blue);background:#eaf2ff}
 .fcount{color:var(--grey);font-size:13px;margin-left:4px}
 .tip{color:var(--grey);font-size:12px;line-height:1.6}
+  /* ★ v2.9.46：所有模式都隐藏的「说明书」文字 —— 牌选择区那句说明、选项标题、
+     复制结果那一栏、底部手机长提示，以及风圈/风位/花牌三个行标签。
+     用户 m04632「竖屏模式下，这些都可以不显示」。
+     与 .hide-land 的区别：那个只管横屏（留给「已选牌」标题）。
+     去标签后仍认得出来：风圈/风位按钮自带「圈/位」字样，花牌行右边有「N 张」计数。 */
+  .hide-all{display:none !important}
 .dlg{position:fixed;inset:0;background:#0006;display:none;align-items:center;justify-content:center;z-index:20}
 .dlg.show{display:flex}
 .dlg .box{background:#fff;border-radius:12px;padding:16px;width:min(92vw,360px)}
@@ -784,6 +799,19 @@ footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px sol
 footer .selwrap{font-size:var(--btn-fs)}
 footer select{max-width:42vw}
 .livetot{font-size:12px;color:#2f7ff0;margin-right:auto}
+/* ★ v2.9.42：底栏可收起。收起后只留右下角一个小把手，点一下回来 */
+body.v42-fbar-hidden footer{display:none}
+body.v42-fbar-hidden main{padding-bottom:16px}
+#fbar_hide{padding:2px 9px;min-width:0;line-height:1.5;opacity:.72;font-size:13px}
+#fbar_hide:hover{opacity:1}
+#fbar_show{position:fixed;right:8px;bottom:8px;z-index:20;padding:5px 11px;
+ border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.96);
+ color:#2f7ff0;font-size:14px;line-height:1.2;box-shadow:0 1px 6px #0003;opacity:.85}
+#fbar_show:hover{opacity:1}
+/* ★ v2.9.48：全屏按钮（在「统计」与收起手柄之间）。
+   用户说「先全屏，再点收起，空间不是更大了」—— 两者可以叠加用。
+   全屏下底栏依然可用（浏览器不会把它藏起来），所以先全屏再收底栏是有意义的。 */
+#btn_full{padding:2px 9px;min-width:0;line-height:1.5;font-size:13px}
 .statsdlg .box{width:min(94vw,440px);max-height:84vh;overflow:auto}
 .statsdlg table{width:100%;border-collapse:collapse;font-size:13px}
 .statsdlg th,.statsdlg td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right}
@@ -801,8 +829,72 @@ footer select{max-width:42vw}
 .tabpane.show{display:block}
 /* ★ v2.9.29：原来这里有一组 .colswrap 样式，给设置弹窗里「统计列 / 明细列」的
    只读勾选框用。那两块勾选区已整块撤掉，样式跟着删 —— 留着也是死代码。 */
+/* ★ v2.9.40：横屏自适应 —— 手机横过来（或平板/桌面宽屏）时自动切紧凑布局，
+   竖屏一个像素都不变（下面每条规则都在这个媒体查询里，竖屏永不命中）。
+
+   做三件事（按用户给的横屏截图）：
+   ① 牌池 4 行 → 2 行：索+筒 一行、万+字牌 一行；
+   ② 模式行（重置 / 立牌 / 吃 / 碰 / 明杠 / 暗杠）压成一行、按钮均分铺满，不再折行；
+   ③ main 解除 760px 宽度上限，整屏铺满（横屏 1000px 宽却只渲染 760 宽，两边大片空白）。
+
+   ★ 宽度下限 820px 是算出来的，不是拍的：18 张牌 × 38px(--tw) + 17 个间距 × 3px(--pgap)
+     = 735px，加上左右各 12px 内边距 = 759px。低于 820px 时 18 列会横向溢出，
+     所以宁可不切两行（回落到竖屏的 4 行），也不让牌池被截掉或出现横向滚动条。
+     注：iPhone SE 横屏只有 667px，不会命中本查询，仍是 4 行 —— 那是刻意的兜底。 */
+/* ===== ★ v2.9.41：横屏进一步紧凑化（用户 m03251 的四点要求）=====
+   ① 顶栏隐藏（截图里没有那条蓝条）；但顶栏里有「布局 / 按键」两个下拉和连接状态，
+      直接藏掉入口就没了 —— 所以下面有 JS 把它们搬进底栏的 #fbar_sel，功能不丢。
+   ② 风位并入风圈那一行（北风圈右边）。
+   ③ 和张并入立牌那一行（立牌右边）。
+   ④ 上面三件事横竖屏都要生效，「横屏才做」只是指「紧凑到什么程度」。 */
+/* 搬进底栏的两个下拉：白底黑字（底栏是白底，原来在蓝条上是反白的） */
+#fbar_sel{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#fbar_sel .selwrap{color:#333;font-size:13px}
+#fbar_sel select{background:#fff;border:1px solid var(--line);border-radius:6px;
+  padding:2px 4px;font-size:13px;max-width:38vw}
+/* 合并后的行：子容器改成 inline-flex，让两组的牌接在一行里，不要各占一整行 */
+.row.merged{flex-wrap:wrap}
+.row.merged>div:not(.lb){display:flex;align-items:center;gap:var(--gw);flex-wrap:wrap}
+/* 合并时第二组的标签（「风位」/「和张」）左边留一点距离，视觉上分组 */
+.row.merged .lb+.btns, .row.merged .lb+.tiles{margin-left:2px}
+.row.merged .lb.sep2{margin-left:14px}
+/* 被并进来的那一整行（#row_swind / #row_win）：不换行、不占满、左边留间距 */
+.row.merged>div.row{margin-left:14px;flex:none;min-height:0}
+/* 顶栏隐藏后 main 顶到视口最上面，留一点呼吸 */
+body.v41-nobar main{padding-top:8px}
+
+@media (orientation:landscape) and (min-width:820px){
+  /* ③ 铺满整屏（底栏是 position:fixed，底部留出它的高度） */
+  main{max-width:none;padding:8px 12px 74px}
+  /* ① 牌池 2 行 2 列（v2.9.43 起）：#pool 是 2 列网格，而 POOL 正好 4 组
+     （索 T / 筒 B / 万 W / 字牌 F+J），按行优先落进 2 列就是：
+       第一行 = 索 1-9 | 筒 1-9
+       第二行 = 万 1-9 | 字牌 7 张
+     ★ 只改布局、不改数据：POOL 数组仍是 4 组，牌的点击/角标逻辑一行没动。
+     ★ 这里不能再用 display:contents：那样 34 张牌会逐张填进 2 列、一列一张交错，
+       顺序会乱；必须保留 .line 让它自己当网格项。 */
+  #pool{display:grid;grid-template-columns:repeat(2,max-content);
+        gap:6px 22px;justify-content:start;align-items:start;overflow-x:auto}
+  /* ★ v2.9.43：保留 .line 让 4 组花色各成一块（2 行 2 列），
+     块内 nowrap 保证 9 张牌排成一行、不折行 */
+  #pool .line{display:flex;flex-wrap:nowrap;gap:var(--pgap);margin:0}
+  /* ② 模式行压成一行：容器不换行，模式块可压缩，按钮等分铺满整行 */
+  .modrow{flex-wrap:nowrap}
+  .modrow .mod{flex-wrap:nowrap;flex:1 1 0;min-width:0}
+  .modrow .mod button{flex:1 1 0;min-width:0;padding-left:4px;padding-right:4px}
+  /* 横屏高度紧张，「重置」也别再靠换行让位 —— 与模式块一起均分 */
+  .modrow>button.warn{flex:none}
+  /* ★ v2.9.40：JS 把复选框（#opts）搬进 .modrow 后，它也要挤在同一行里 ——
+     不许换行、等分、字号略小一号，四项（自摸/和绝张/杠上开花/妙手回春）才塞得下。 */
+  .modrow>.inline-opts{flex-wrap:nowrap;flex:1 1 0;min-width:0;gap:4px}
+  .modrow>.inline-opts button{flex:1 1 0;min-width:0;font-size:13px;
+        padding-left:3px;padding-right:3px;white-space:nowrap}
+  /* ★ v2.9.46：只剩「已选牌」标题是仅横屏隐藏 —— 用户明确要留它在竖屏当分区提示，
+     而牌选择区说明/选项标题/复制栏/长提示都改成所有模式都不显示了（见下面 .hide-all）。 */
+  .hide-land{display:none !important}
+}
 </style></head><body>
-<header>
+<header id="topbar">
   <!-- ★ v2.9.7：「布局 / 按键」从底栏搬到顶栏左侧，标题居中 -->
   <span class="selwrap">布局：<select id="lysel" onchange="setLayout(this.value)"></select></span>
   <span class="selwrap">按键：<select id="szsel" onchange="applyBtnSize(this.value)"></select></span>
@@ -812,7 +904,7 @@ footer select{max-width:42vw}
 <main>
   <!-- ① 牌选择区（与桌面版一致：索 / 筒 / 万 / 字牌 四行） -->
   <div class="card" id="c_pool">
-    <h2>牌选择区（点一下加一张；减牌请在下面「已选牌」里点一张）</h2>
+    <h2 class="hide-all">牌选择区（点一下加一张；减牌请在下面「已选牌」里点一张）</h2>
     <div class="pool" id="pool"></div>
   </div>
 
@@ -830,20 +922,20 @@ footer select{max-width:42vw}
 
   <!-- ③ 选项区：固定四行（①复选框 ②圈风 ③风位 ④花牌），与桌面版一致 -->
   <div class="card">
-    <h2>选项</h2>
-    <div class="row"><div class="btns" id="opts"></div></div>
-    <div class="row"><div class="lb">风圈</div><div class="btns" id="rwind"></div></div>
-    <div class="row"><div class="lb">风位</div><div class="btns" id="swind"></div></div>
-    <div class="row"><div class="lb">花牌</div><div class="tiles" id="flowers"></div>
+    <h2 class="hide-all">选项</h2>
+    <div class="row" id="row_opts"><div class="btns" id="opts"></div></div>
+    <div class="row" id="row_rwind"><div class="lb hide-all">风圈</div><div class="btns" id="rwind"></div></div>
+    <div class="row" id="row_swind"><div class="lb hide-all">风位</div><div class="btns" id="swind"></div></div>
+    <div class="row"><div class="lb hide-all">花牌</div><div class="tiles" id="flowers"></div>
       <span class="fcount" id="fcount">0 张</span></div>
   </div>
 
   <!-- ④ 已选牌 -->
   <div class="card">
-    <h2>已选牌</h2>
+    <h2 class="hide-land">已选牌</h2>
     <div class="row"><div class="lb">副露</div><div class="tiles" id="m_melds"></div></div>
-    <div class="row"><div class="lb">立牌</div><div class="tiles" id="m_hand"></div></div>
-    <div class="row"><div class="lb">和张</div><div class="tiles" id="m_win"></div></div>
+    <div class="row" id="row_hand"><div class="lb">立牌</div><div class="tiles" id="m_hand"></div></div>
+    <div class="row" id="row_win"><div class="lb">和张</div><div class="tiles" id="m_win"></div></div>
     <div class="row"><div class="lb">花牌</div><div class="tiles" id="m_flower"></div></div>
     <div class="tip" id="hint"></div>
   </div>
@@ -860,7 +952,13 @@ footer select{max-width:42vw}
     <div class="tot" id="tot">—</div>
     <div class="tip" id="msg"></div>
     <div class="tags" id="fans"></div>
-    <div class="tip" style="margin-top:6px">
+    <!-- ★ v2.9.39：落选番种（本来成立、被「不计」覆盖），有才显示 -->
+    <div class="tip" id="explain" style="display:none;margin-top:8px;color:#8a8a8a"></div>
+    <!-- ★ v2.9.39：一键复制算番结果（只复制文字，方便贴群里） -->
+    <div class="row hide-all" style="margin-top:8px">
+      <button id="btn_copy" onclick="copyResult()" style="display:none">📋 复制结果</button>
+    </div>
+    <div class="tip hide-all" style="margin-top:6px">
       手机：点牌加一张；<b>点错了不用「重置」</b>，「已选牌」里那一块都能点掉 ——
       点<b>立牌</b>一张减一张、点<b>副露</b>一张撤销那一组（吃/碰/杠）、点<b>和张</b>取消和张、
       点<b>花牌</b>行取消那张（牌上的圆点只是张数，点它不再减牌；
@@ -872,6 +970,8 @@ footer select{max-width:42vw}
   </div>
 </main>
 <footer>
+  <!-- ★ v2.9.41：顶栏隐藏后，「布局 / 按键 / 连接状态」搬到这里，入口不能丢 -->
+  <span id="fbar_sel"></span>
   <span class="livetot" id="livetot"></span>
   <button id="jump_pool" onclick="gotoBlock('c_pool')">↑ 牌池</button>
   <button id="jump_res" onclick="gotoBlock('c_res')">↓ 结果</button>
@@ -880,7 +980,14 @@ footer select{max-width:42vw}
   <button id="btn_set" onclick="showSet()" title="设置：读番 / 语音">设置</button>
   <!-- ★ v2.9.6：统计按钮（在「设置」右边）—— 查看所有用户的算番统计 -->
   <button id="btn_stats" onclick="showStats()" title="查看所有人的算番统计">统计</button>
+  <!-- ★ v2.9.48：全屏按钮 —— 先全屏再收底栏，屏幕就全给牌池和结果了 -->
+  <button id="btn_full" onclick="toggleFull()" title="全屏（再点一次退出）">⛶</button>
+  <!-- ★ v2.9.42：底栏可收起（横屏想多留点地方时用），收起后右下角有把手点回来 -->
+  <button id="fbar_hide" onclick="hideFbar()" title="收起底栏（点右下角的小箭头可以再展开）">🔻</button>
 </footer>
+
+<!-- ★ v2.9.42：底栏收起后的「点回来」把手 —— 必须一直可见，否则弹层里的布局/按键下拉就再也拿不回来了 -->
+<button id="fbar_show" onclick="showFbar()" title="显示底栏" style="display:none">🔺</button>
 
 <!-- ★ v2.9.4：页面「设置」弹窗（读番开关 + 语音包）—— 原来这两个在模式行里，太占地方 -->
 <div class="dlg" id="setdlg" onclick="if(event.target===this)hideSet()"><div class="box">
@@ -1290,6 +1397,10 @@ function resetAll(){/* ★ 全部重置（与桌面版一致） */
   S.melds=[];S.concealed={};S.win=null;S.pending=[];S.flowers=[];S.mode="stand";
   S.opts={tsumo:false,last_tile:false,special_a:false,special_b:false,
           round:"东",seat:"东"};
+  /* ★ v2.9.39：清掉上一次结果，否则「复制结果」会把重置前的旧数据复制走 */
+  lastResult=null;
+  const cb0=el("btn_copy");if(cb0)cb0.style.display="none";
+  const ex0=el("explain");if(ex0){ex0.style.display="none";ex0.innerHTML="";}
   render();
 }
 /* 减一张（★ 手机友好入口：「已选牌」的立牌 / 和张行里点一张；
@@ -1429,8 +1540,17 @@ function bindPool(){
   document.querySelectorAll("#pool .tile").forEach(node=>{
     const code=node.dataset.code;
     let timer=null,long=false;
-    const start=()=>{long=false;timer=setTimeout(()=>{long=true;longTap(code);},450);};
-    const end=()=>{clearTimeout(timer);if(!long)tap(code);};
+    const start=(e)=>{
+      /* ★ v2.9.38：只认同左键。以前不判断按键，右键按下也会启动「长按减牌」计时器，
+         松手时先被当成左键加了一张，紧接着 contextmenu 又减一张，一加一减正好抵消
+         —— 表现就是「右键减牌没反应」。触摸事件传进来的是 event 但没有 button
+         （undefined），所以这个判断不会误伤手机端。 */
+      if(e&&typeof e.button==="number"&&e.button!==0)return;
+      long=false;timer=setTimeout(()=>{long=true;longTap(code);},450);};
+    const end=(e)=>{
+      /* ★ v2.9.38：右键松手既不加牌，也不去清左键的长按计时器 */
+      if(e&&typeof e.button==="number"&&e.button!==0)return;
+      clearTimeout(timer);if(!long)tap(code);};
     node.addEventListener("mousedown",start);
     node.addEventListener("mouseup",end);
     node.addEventListener("mouseleave",()=>clearTimeout(timer));
@@ -1462,8 +1582,24 @@ async function compute(){
                                          "番种合计 "+j.base+" 分，未达 8 分起和标准");
       el("fans").innerHTML=(j.fans||[]).map(f=>'<div class="tag"><b>'+f.value+
         '</b>'+f.name+'</div>').join("");
+      /* ★ v2.9.39：把「本来成立但被不计」的番种也列出来（灰色小字），
+         回答「为什么没算 X 番」；没有落选就整块隐藏 */
+      const ex=el("explain");
+      if(ex){
+        const ds=j.dropped||[];
+        if(ds.length){
+          ex.style.display="";
+          ex.innerHTML='<b>未计（被更高番种覆盖）</b>：'+ds.map(d=>
+            esc(d.name)+d.value+'番<span class="by">（因'+esc(d.by)+'不计）</span>'
+            ).join("　");
+        }else{ex.style.display="none";ex.innerHTML="";}
+      }
       /* ★ v2.9.0：记下总番；开着「读番」就念出来（合计 N 番） */
       currentTotal=j.total;
+      /* ★ v2.9.39：留一份源数据给「复制结果」用，并让复制按钮出现 */
+      lastResult=j;
+      const cb=el("btn_copy");
+      if(cb)cb.style.display="";
       if(SPEAK)speakTotal(j.total);
       /* ★ v2.9.6：本机实时累计（仅当天；同一手牌只计一次，避免选项切换刷数） */
       const hs=sigHand();
@@ -1514,6 +1650,53 @@ const SPEAK_KEY="mj_speak";
    渲染进来，默认 true。这样「无论用哪个端，都能自动读番」。 */
 const SPEAK_DEFAULT=__SPEAK_DEFAULT__;
 let SPEAK=SPEAK_DEFAULT, speakQueue=[], speakAudio=null, currentTotal=null;
+/* ★ v2.9.39：一键复制 —— 把最近一次算番结果存成纯文本。
+   为什么不现从 DOM 抓：DOM 里番种是按「值+名字」两段拼的，抓回来顺序容易乱；
+   直接留一份源数据更稳，也顺便能带上「因 X 不计」的解释。 */
+let lastResult=null;
+function resultText(){
+  if(!lastResult)return "";
+  const r=lastResult, parts=[];
+  parts.push("合计 "+r.total+" 番"+(r.reach_standard?"":"（未达 8 分起和）"));
+  if(r.pattern)parts.push("牌型："+r.pattern);
+  if((r.fans||[]).length)
+    parts.push("番种："+r.fans.map(f=>f.name+" "+f.value+"番").join("、"));
+  if((r.dropped||[]).length)
+    parts.push("未计："+r.dropped.map(d=>d.name+" "+d.value+"番（因"+d.by+"不计）").join("、"));
+  return parts.join("\\n");
+}
+function copyToast(msg){
+  /* 页面上没有全局 toast，就直接改按钮文字，2 秒后还原 —— 最省事也最不容易出错 */
+  const b=el("btn_copy");
+  if(!b)return;
+  if(!b.dataset.orig)b.dataset.orig=b.textContent;
+  b.textContent=msg;
+  clearTimeout(b._t);
+  b._t=setTimeout(()=>{b.textContent=b.dataset.orig;},2000);
+}
+function copyResult(){
+  const t=resultText();
+  if(!t){copyToast("还没有结果可复制");return;}
+  const done=()=>copyToast("✓ 已复制，可直接粘贴");
+  const fail=()=>copyToast("复制失败，请手动选择");
+  /* navigator.clipboard 只在 https 或 localhost 下可用；
+     局域网用 http 打开（手机连电脑 IP）时它是 undefined，所以必须留 execCommand 兜底。 */
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(done).catch(()=>legacyCopy(t)?done():fail());
+  }else{legacyCopy(t)?done():fail();}
+}
+function legacyCopy(t){
+  try{
+    const ta=document.createElement("textarea");
+    ta.value=t;
+    ta.style.position="fixed";ta.style.top="-1000px";ta.style.opacity="0";
+    document.body.appendChild(ta);
+    ta.focus();ta.select();
+    const ok=document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  }catch(e){return false;}
+}
 /* ★ v2.9.3：读番用哪一套录音 —— 《数字》下有几个子目录就有几套（目录名＝语音包名），
    默认用服务器端设置的那一套；本机在这儿选过就只影响本机（存 localStorage）。 */
 const VOICE_SETS=__VOICE_SETS__, VOICE_SET_SERVER=__VOICE_SET__, VOICE_KEY="mj_voice";
@@ -1903,6 +2086,173 @@ function seedLive(){
   }).catch(()=>{updateLive();});
 }
 
+/* ---------- ★ v2.9.40：横屏时把「复选框」并进模式行 ----------
+   横屏截图里「自摸 / 和绝张 / 杠上开花 / 妙手回春」是紧跟在「暗杠」右边、同一行的；
+   而它们在 DOM 里属于下一张卡片（选项区的第 1 行 #row_opts）。
+   这里按媒体查询条件把那一行**搬进**模式行的容器（.modrow），竖屏再搬回去。
+
+   ★ 为什么用 JS 搬 DOM 而不是纯 CSS：两块在不同卡片里，CSS 没法跨父级挪位置
+     （没有 :has 的情况下，连「让 A 的父级变成 B 的兄弟」都做不到）。
+   ★ 为什么用 matchMedia 而不是只在启动时判断一次：手机横竖屏切换、
+     平板拖窗口大小都会实时改变结果，监听 change 才能跟着变，不用刷新页面。
+   ★ 搬运时只动 #opts 这一个 div（不是整张卡片），卡片本身/标题/圈风风位花牌都不受影响。 */
+const MQ_LAND=matchMedia("(orientation:landscape) and (min-width:820px)");
+let OPTS_MOVED=false;
+function syncOptsRow(){
+  const box=el("opts"), holder=el("row_opts"), modrow=document.querySelector(".modrow");
+  if(!box||!holder||!modrow)return;
+  if(MQ_LAND.matches){
+    if(box.parentNode===modrow)return;      /* 已经在模式行里了 */
+    modrow.appendChild(box);
+    holder.style.display="none";           /* 空壳留占位会多出一条空隙，直接收掉 */
+    box.classList.add("inline-opts");
+    OPTS_MOVED=true;
+  }else{
+    if(!OPTS_MOVED&&box.parentNode===holder)return;
+    holder.appendChild(box);
+    holder.style.display="";
+    box.classList.remove("inline-opts");
+    OPTS_MOVED=false;
+  }
+}
+
+/* ---------- ★ v2.9.41：紧凑合并（横竖屏都生效） ---------- */
+/* 用户 m03251 的要求：
+   ① 风位放在北风圈右边 ② 和张放在立牌右边 ③ 最上面的标题栏隐藏
+   ① ② 的做法是「把整行搬进去」而不是「把按钮塞进另一个容器」——
+   这样 #rwind / #swind / #m_hand / #m_win 的 id 全都不变，
+   render() 里那些 getElementById 与 innerHTML 重建一行都不用动。
+   ③ 顶栏里有「布局 / 按键」两个下拉 + 连接状态，先搬进底栏 #fbar_sel 再藏，
+   否则用户就再也点不到布局和按键了。 */
+let V41_DONE=false;
+function applyV41Layout(){
+  if(V41_DONE)return;
+  V41_DONE=true;
+  /* ① 风位并进风圈行 */
+  const rw=el("row_rwind"), sw=el("row_swind");
+  if(rw&&sw&&sw.parentNode!==rw){
+    rw.appendChild(sw);
+    rw.classList.add("merged");
+  }
+  /* ② 和张并进立牌行 */
+  const rh=el("row_hand"), rn=el("row_win");
+  if(rh&&rn&&rn.parentNode!==rh){
+    rh.appendChild(rn);
+    rh.classList.add("merged");
+  }
+  /* ③ 顶栏：先搬出入功能控件，再整条藏掉 */
+  const bar=el("topbar"), slot=el("fbar_sel");
+  if(bar&&slot){
+    /* 「布局 / 按键」两个下拉 + 连接状态，全搬到底栏 */
+    const keep=[...bar.querySelectorAll(".selwrap"), bar.querySelector(".st")];
+    keep.forEach(n=>{ if(n) slot.appendChild(n); });
+    bar.style.display="none";
+    document.body.classList.add("v41-nobar");
+  }
+}
+
+/* ---------- ★ v2.9.42：底栏收放 ----------
+   为什么要有：横屏时底栏常年钉在屏幕底部，占掉一条；想多看几行牌时它碍事，
+   但「布局 / 按键」两个下拉和设置/统计入口又都在里面，所以做成「能收能放」。
+   记住选择：存 localStorage（mj_fbar，"0"=收起），刷新后还是上次那样。
+   ★ 收起时必须让 #fbar_show 那把小把手露出来 —— 否则底栏一藏，两个下拉就再也拿不回来了。
+-------------------------------------------------------------------------- */
+const FBAR_KEY="mj_fbar";
+function fbarApply(hidden){
+  const show=el("fbar_show");
+  if(hidden){
+    document.body.classList.add("v42-fbar-hidden");
+    if(show) show.style.display="";
+  }else{
+    document.body.classList.remove("v42-fbar-hidden");
+    if(show) show.style.display="none";
+  }
+}
+function hideFbar(){
+  FULL_FELLBACK = false;   /* 用户自己收的，不是全屏降级带来的 */
+  fbarApply(true);
+  try{localStorage.setItem(FBAR_KEY,"0");}catch(e){}
+}
+function showFbar(){
+  fbarApply(false);
+  try{localStorage.setItem(FBAR_KEY,"1");}catch(e){}
+}
+function loadFbar(){
+  let v="1";
+  try{v=localStorage.getItem(FBAR_KEY)||"1";}catch(e){v="1";}
+  fbarApply(v==="0");
+}
+
+/* ★ v2.9.48：全屏。为什么要三个分支：
+   ① 标准 API就是 requestFullscreen/exitFullscreen；
+   ② iOS Safari（包括微信内置浏览器）只有 webkit 前缀版，且 iPhone 上压根不支持
+     元素全屏（只能全屏 video）；
+   ③ 不支持时不能报错也不能没反应 —— 退化为「隐藏底栏 + 顶栏（横屏本来已隐）」，
+     至少让用户看到屏幕真的多了点地方。实测 iPhone 微信内就走这条。 */
+function fullSupported(){
+  var de = document.documentElement;
+  return !!(de.requestFullscreen || de.webkitRequestFullscreen ||
+            de.mozRequestFullScreen || de.msRequestFullscreen);
+}
+function isFull(){
+  return !!(document.fullscreenElement || document.webkitFullscreenElement ||
+            document.mozFullScreenElement || document.msFullscreenElement);
+}
+/* ★ 降级标志：只有「全屏被拒后自动收底栏」这种情况，下次点全屏才改为「把底栏还回来」。
+   否则用户自己用 🔻 收起了底栏、再点全屏，就不该被强制展开。 */
+var FULL_FELLBACK = false;
+function toggleFull(){
+  if(FULL_FELLBACK && document.body.classList.contains("v42-fbar-hidden")){
+    showFbar(); FULL_FELLBACK = false; return;
+  }
+  FULL_FELLBACK = false;
+  if(!fullSupported()){
+    /* 不支持全屏的浏览器：底栏反正能收起，直接帮用户收了，并且不再弹窗 */
+    if(document.body.classList.contains("v42-fbar-hidden")){ showFbar(); }
+    else { hideFbar(); }
+    return;
+  }
+  if(isFull()){
+    var ex = document.exitFullscreen || document.webkitExitFullscreen ||
+             document.mozCancelFullScreen || document.msExitFullscreen;
+    if(ex){ try{ var pe = ex.call(document); if(pe && pe.catch){ pe.catch(function(){}); } }catch(e){} }
+  }else{
+    var rq = document.documentElement.requestFullscreen ||
+             document.documentElement.webkitRequestFullscreen ||
+             document.documentElement.mozRequestFullScreen ||
+             document.documentElement.msRequestFullscreen;
+    if(rq){
+      try{
+        var pr = rq.call(document.documentElement);
+        /* ★ 必须接住 promise 拒绝：requestFullscreen 在非用户手势、权限策略不允许、
+           iOS 不支持元素全屏时会 reject。只用 try{}catch{} 是接不住的（异步），
+           会在控制台冒 Uncaught (in promise)，用户看到就是「点了没反应」。
+           失败时降级帮用户收起底栏 —— 至少屏幕真的多了点地方。 */
+        if(pr && pr.catch){
+          /* ★ 顺序很重要：hideFbar() 里会清 FULL_FELLBACK（那是给「用户自己点收起」用的），
+             所以必须先调它、再把标志置回 true。 */
+          pr.catch(function(){ if(!document.body.classList.contains("v42-fbar-hidden")){ hideFbar(); FULL_FELLBACK = true; } });
+        }
+      }catch(e){
+        if(!document.body.classList.contains("v42-fbar-hidden")){ hideFbar(); FULL_FELLBACK = true; }
+      }
+    }
+  }
+}
+function syncFullBtn(){
+  var b = el("btn_full");
+  if(!b){ return; }
+  /* 全屏中给一个高亮色，告诉用户再点一次就退出 */
+  b.textContent = isFull() ? "✕" : "⛶";
+  b.title = isFull() ? "退出全屏" : "全屏（再点一次退出）";
+  b.style.background = isFull() ? "#2f7ff0" : "";
+  b.style.color = isFull() ? "#fff" : "";
+}
+["fullscreenchange","webkitfullscreenchange","mozfullscreenchange","MSFullscreenChange"]
+  .forEach(function(ev){
+    document.addEventListener(ev, function(){ syncFullBtn(); }, false);
+  });
+
 /* ---------- 启动 ---------- */
 (async function(){
   loadToken();
@@ -1917,6 +2267,11 @@ function seedLive(){
   /* ★ v2.9.9：统计表用**事件委托**接点击（行是后画的，不能逐个绑） */
   {const sb=el("statbody"); if(sb&&sb.addEventListener)sb.addEventListener("click",statRowClick);}
   updateJumpBtns();                    /* ★ v2.7.9 底部跳转按钮：没得滚就置灰 */
+  syncOptsRow();                       /* ★ v2.9.40 按当前横竖屏摆一次复选框 */
+  applyV41Layout();                    /* ★ v2.9.41 风位/和张并进上一行 + 隐藏顶栏 */
+  loadFbar();                          /* ★ v2.9.42 恢复上次的底栏收放状态 */
+  syncFullBtn();                       /* ★ v2.9.48 全屏按钮文案跟状态走 */
+  try{MQ_LAND.addEventListener("change",syncOptsRow);}catch(e){MQ_LAND.addListener(syncOptsRow);}
   try{
     const h=await api("/api/health");
     el("st").textContent="已连接";

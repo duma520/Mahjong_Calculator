@@ -34,6 +34,9 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QColorDialog,
 
 from mahjong_wall_core import (
     BG,
+    CD_FONT_SCALE_DEFAULT,
+    CD_FONT_SCALE_MAX,
+    CD_FONT_SCALE_MIN,
     CUSTOM_NAME_MAX,
     CUSTOM_PALETTE_MAX,
     DEFAULT_GEO_SIZE,
@@ -78,10 +81,16 @@ PAGE_KEYS: Dict[str, Tuple[str, ...]] = {
     "palette": ("wall_palette", "wall_palettes",
                 "wall_score_mode", "wall_highlight_first"),
     "window": ("wall_geo", "wall_maximized"),
+    # ★ v2.9.37 倒计时四个键单独一页：它不属于「数据 / 外观 / 配色 / 窗口」任何一类，
+    #   而且用户会在看板底栏上直接操作，设置页只作为「看不看得到 / 怎么提醒」的说明。
+    "countdown": ("wall_cd_minutes", "wall_cd_state",
+                  "wall_cd_remain_ms", "wall_cd_saved_at",
+                  "wall_cd_font_scale"),
 }
 
 PAGE_TITLES = (("data", "📊 数据"), ("style", "🎨 外观"),
-               ("palette", "🌈 配色"), ("window", "🪟 窗口"))
+               ("palette", "🌈 配色"), ("countdown", "⏱ 倒计时"),
+               ("window", "🪟 窗口"))
 
 
 class StylePreview(QWidget):
@@ -171,7 +180,10 @@ class WallConfigDialog(QDialog):
         self.tabs.addTab(self._build_data_page(), PAGE_TITLES[0][1])
         self.tabs.addTab(self._build_style_page(), PAGE_TITLES[1][1])
         self.tabs.addTab(self._build_palette_page(), PAGE_TITLES[2][1])
-        self.tabs.addTab(self._build_window_page(), PAGE_TITLES[3][1])
+        self.tabs.addTab(self._build_countdown_page(),
+                         dict(PAGE_TITLES)["countdown"])
+        self.tabs.addTab(self._build_window_page(),
+                         dict(PAGE_TITLES)["window"])
         self.tabs.currentChanged.connect(self._on_tab_changed)
         lay.addWidget(self.tabs, 1)
 
@@ -556,6 +568,149 @@ class WallConfigDialog(QDialog):
         lay.addStretch(1)
         lay.addLayout(self._page_reset_row("window"))
         return page
+
+    # ================================================================ 倒计时页
+    def _build_countdown_page(self) -> QWidget:
+        """⏱ 倒计时页（★ v2.9.37）
+
+        ★ 为什么这一页只做「说明 + 只读状态」、不放开始/暂停按钮：
+          倒计时的操作入口在**看板自己底栏上**（用户就在看板前面坐着，
+          伸手点得到）。设置页是个模态对话框，挡在看板前面，反而多一步。
+          这一页负责讲清楚「在哪开、颜色什么意思、归零会不会响」，
+          再给一个「本页恢复默认」用来一键关掉倒计时（=回到老版本行为）。
+        """
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(10, 10, 10, 10)
+        lay.setSpacing(10)
+
+        box = QGroupBox("倒计时在哪操作")
+        g = QVBoxLayout(box)
+        g.setSpacing(8)
+        info = QLabel(
+            "倒计时显示在看板标题行里、夹在日期与「今日战绩」之间"
+            "（★ v2.9.48 起顺序是「日期 · 倒计时 · 今日战绩」），格式 HH:MM:SS。\n\n"
+            "① 先在大屏看板底部按钮条上选时长：「关闭倒计时 / 1 小时 / "
+            "2 小时 / 3 小时」。选「关闭倒计时」就完全不显示，与老版本一样。\n"
+            "② 选好时长后点「▶ 开始」；中途点「⏸ 暂停」会停住，再点「▶ 继续」"
+            "接着走（暂停期间时间不走）。\n"
+            "③ 点「↺ 重置」回到满格待开始；归零后再点它又来一轮。\n"
+            "④ 关掉看板再打开会接着上次的进度走（剩余时间存在设置文件里），"
+            "归零的那一刻会响一声提示音。\n\n"
+            "颜色含义：灰色 = 选好时长但还没开始；金色 = 正在走；橙色 = 暂停中，"
+            "或只剩最后 5 分钟；红色闪动 = 已经归零。")
+        info.setWordWrap(True)
+        g.addWidget(info)
+        lay.addWidget(box)
+
+        # ---- 倒计时字号（★ v2.9.45）：基准是标题「今日战绩」的字号
+        box_fs = QGroupBox("倒计时字号")
+        gf = QVBoxLayout(box_fs)
+        gf.setSpacing(8)
+        finfo = QLabel("倒计时（HH:MM:SS）跟标题「今日战绩」是同一行，"
+                       "这里调它相对标题的大小。1.00 倍 = 和标题完全一样大"
+                       "（v2.9.45 起默认）；0.78 倍是 v2.9.37~v2.9.44 的旧观感。"
+                       "用的是倍数不是固定字号 —— 窗口放大、换投影分辨率时，"
+                       "标题和倒计时会一起缩放，比例不会跑掉。")
+        finfo.setStyleSheet("color:#666;")
+        finfo.setWordWrap(True)
+        gf.addWidget(finfo)
+
+        rf = QHBoxLayout()
+        rf.setSpacing(8)
+        rf.addWidget(QLabel("小"))
+        self.sld_cd_fs = QSlider(Qt.Horizontal)
+        self.sld_cd_fs.setRange(int(round(CD_FONT_SCALE_MIN * 100)),
+                                int(round(CD_FONT_SCALE_MAX * 100)))
+        self.sld_cd_fs.setValue(int(round(float(
+            self.cfg.get("wall_cd_font_scale", CD_FONT_SCALE_DEFAULT)) * 100)))
+        self.sld_cd_fs.setTickPosition(QSlider.TicksBelow)
+        self.sld_cd_fs.setTickInterval(10)
+        self.sld_cd_fs.valueChanged.connect(self._on_cd_fs_changed)
+        rf.addWidget(self.sld_cd_fs, 1)
+        rf.addWidget(QLabel("大"))
+        gf.addLayout(rf)
+
+        self.lbl_cd_fs = QLabel("")
+        self.lbl_cd_fs.setStyleSheet("color:#333;")
+        gf.addWidget(self.lbl_cd_fs)
+
+        rf2 = QHBoxLayout()
+        rf2.setSpacing(6)
+        for text, val, tip_txt in (
+                ("和标题一样大（推荐）", 1.0,
+                 "v2.9.45 起的默认值，倒计时与「今日战绩」等大"),
+                ("小一档（旧观感）", 0.78,
+                 "v2.9.37~v2.9.44 的样子，比标题小一档"),
+                ("大一档", 1.3, "远距离或投影偏小时用"),
+                ("最大", 2.0, "倒计时会是标题的两倍大，容易抢眼，慎用")):
+            b = QPushButton(text)
+            b.setToolTip(tip_txt)
+            b.clicked.connect(
+                lambda _=False, v=val: self.sld_cd_fs.setValue(int(round(v * 100))))
+            rf2.addWidget(b)
+        rf2.addStretch(1)
+        gf.addLayout(rf2)
+        lay.addWidget(box_fs)
+
+        box2 = QGroupBox("当前状态（只读）")
+        g2 = QVBoxLayout(box2)
+        g2.setSpacing(6)
+        self.lbl_cd_now = QLabel("")
+        self.lbl_cd_now.setStyleSheet("color:#333;")
+        self.lbl_cd_now.setWordWrap(True)
+        g2.addWidget(self.lbl_cd_now)
+        btn_refresh = QPushButton("刷新状态")
+        btn_refresh.setToolTip("倒计时在底栏上一直在走，这里只是读一眼当前存的值")
+        btn_refresh.clicked.connect(self._refresh_cd_label)
+        g2.addWidget(btn_refresh)
+        lay.addWidget(box2)
+
+        tip = QLabel("提示音是程序目录下的 timer_end.mp3。找不到这个文件就不响，"
+                     "不影响倒计时本身（也不会弹报错框）。")
+        tip.setStyleSheet("color:#666;")
+        tip.setWordWrap(True)
+        lay.addWidget(tip)
+        lay.addStretch(1)
+        lay.addLayout(self._page_reset_row("countdown"))
+        self._refresh_cd_label()
+        self._refresh_cd_fs_label()   # ★ v2.9.45 字号标签同步显示
+        return page
+
+    def _on_cd_fs_changed(self, val: int) -> None:
+        """滑块动一下就把倍数写回 cfg，并立刻刷新说明文字（★ v2.9.45）"""
+        self.cfg["wall_cd_font_scale"] = max(CD_FONT_SCALE_MIN,
+                                            min(CD_FONT_SCALE_MAX, val / 100.0))
+        self._refresh_cd_fs_label()
+
+    def _refresh_cd_fs_label(self) -> None:
+        """把倍数翻成人话：0.78 倍 ≈ 标题的 78%（比标题小一档）"""
+        try:
+            v = float(self.cfg.get("wall_cd_font_scale", CD_FONT_SCALE_DEFAULT))
+        except Exception:       # noqa: BLE001
+            v = CD_FONT_SCALE_DEFAULT
+        if abs(v - 1.0) < 0.005:
+            tail = "（和标题一样大）"
+        elif v < 1.0:
+            tail = "（比标题小）"
+        else:
+            tail = "（比标题大）"
+        self.lbl_cd_fs.setText("当前：%.2f 倍%s" % (v, tail))
+
+    def _refresh_cd_label(self) -> None:
+        """把当前倒计时状态翻成中文显示（只读）"""
+        mins = int(self.cfg.get("wall_cd_minutes") or 0)
+        st = str(self.cfg.get("wall_cd_state") or "idle")
+        remain = int(self.cfg.get("wall_cd_remain_ms") or 0)
+        if mins <= 0:
+            self.lbl_cd_now.setText("当前：关闭倒计时（选一个时长后看板标题右边才会出现）")
+            return
+        names = {"idle": "待开始", "running": "正在走",
+                 "paused": "已暂停", "done": "已归零"}
+        self.lbl_cd_now.setText(
+            "当前：%d 分钟 · %s · 剩余 %02d:%02d:%02d"
+            % (mins, names.get(st, st),
+               remain // 3600000, (remain % 3600000) // 60000, (remain % 60000) // 1000))
 
     def _page_reset_row(self, page_key: str) -> QHBoxLayout:
         """每页右下角的「本页恢复默认」——只重置这一页的键"""
@@ -1090,6 +1245,12 @@ class WallConfigDialog(QDialog):
             elif page_key == "window":
                 self.cb_max.setChecked(bool(dft["wall_maximized"]))
                 self._reset_geometry()
+            elif page_key == "countdown":
+                # 倒计时这一页没有可编辑控件，重置就是回到「关闭倒计时」
+                self.sld_cd_fs.setValue(int(round(float(
+                    self.cfg.get("wall_cd_font_scale", CD_FONT_SCALE_DEFAULT)) * 100)))
+                self._refresh_cd_fs_label()
+                self._refresh_cd_label()
         finally:
             self._loading = False
         self._refresh_style_preview()

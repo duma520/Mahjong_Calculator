@@ -17,6 +17,31 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (QBrush, QColor, QFont, QFontDatabase, QFontMetricsF,
                            QPainter, QPainterPath, QPen, QPixmap)
 
+# ---------------------------------------------------------------- 配色质量校验层（v2.9.37 抽出）
+# 颜色解析 / 可见性度量 / 色差 / 自动描边，全部搬进 mahjong_color_quality.py，
+# 本文件把这些名字**原样 re-export**：绘制链路、上墙设置界面、三个探针脚本
+# （_stroke_auto_probe.py / _v34_rainbow_check.py / _board_stroke_cmp.py）
+# 一律沿用 `mahjong_wall_core.xxx` 的旧写法，外部接口一个都没变。
+from mahjong_color_quality import (  # noqa: F401
+    # 描边参数
+    STROKE_MIN, STROKE_MAX, STROKE_DEFAULT,
+    STROKE_COLOR_DEFAULT, STROKE_AUTO,
+    AUTO_STROKE_DE_WHITE, AUTO_STROKE_DE_MIN, AUTO_STROKE_BLACK_MIN,
+    AUTO_STROKE_DIM_BELOW,
+    # 色阶兜底
+    DEFAULT_STEPS,
+    # 颜色解析与度量
+    is_hex_color, expand_hex, normalize_steps,
+    hex_to_rgb, rgb_to_hex,
+    contrast_on_black, palette_quality,
+    # 自动描边
+    auto_stroke_for_fill, stroke_candidates, stroke_setting,
+    auto_stroke_for, auto_stroke_for_v2,
+    # 私有度量：探针脚本直接按这些名字断言，必须一起 re-export
+    _luminance, _mix, _contrast_pair, _hsl_of, _hsl_hex, _srgb_to_lab, _delta_e,
+    _auto_stroke_for_fill_uncached, _AUTO_STROKE_CACHE,
+)
+
 # ---------------------------------------------------------------- 设置键（存 mahjong_settings.json）
 # ★ 新增设置项必须三处成对实现（见主程序 docstring「设置持久化」）：
 #   _collect_settings() 收集 + _apply_settings() 应用 + 这里的默认值
@@ -30,31 +55,149 @@ SETTING_KEYS = (
     "wall_palette", "wall_palettes", "wall_score_mode", "wall_highlight_first",
     # 窗口（🪟）
     "wall_geo", "wall_maximized",
+    # 倒计时（⏱ ★ v2.9.37 新增；v2.9.45 加字号倍数）
+    "wall_cd_minutes", "wall_cd_state", "wall_cd_remain_ms", "wall_cd_saved_at",
+    "wall_cd_font_scale",
 )
 
-# 描边系数：白边宽度 = 字号 × 系数。
-# ★ v2.9.32 起默认 0.08（用户反馈「太粗，细一点」）。原值 0.14 在 43px 字上
-#   是 6.02px，粗到笔画糊在一起；0.08 是 3.44px，远看仍清晰、近看不发肿。
-STROKE_MIN = 0.02
-STROKE_MAX = 0.20
-STROKE_DEFAULT = 0.08
+# ---------------------------------------------------------------- 倒计时（★ v2.9.37）
+# 用户要求（原话）：「在上墙哪里增加 倒计时，分别是1小时，2小时，3小时，可选。
+#   显示在"今日战绩"后面，显示方式为 HH:MM:SS，就是时分秒。」
+# 交互口径（已与用户确认）：手动开始 / 暂停 / 重置；归零后**停住**显示 00:00:00
+#   并闪红 + 播提示音；关掉看板再打开，按**真实经过的时间**接着走。
+#
+# 为什么存「剩余毫秒 + 落盘时刻」而不是只存一个截止时间戳：
+#   running 时剩余 = remain_ms - (now - saved_at)，两个数一起存才能跨进程重启
+#   正确续算；paused / done 时 now 不再参与，remain_ms 就是定格值。
+#   只存截止时间戳的话，暂停后时间还在走，暂停等于没暂停。
+CD_STATE_IDLE = "idle"
+CD_STATE_RUNNING = "running"
+CD_STATE_PAUSED = "paused"
+CD_STATE_DONE = "done"
+CD_STATES = (CD_STATE_IDLE, CD_STATE_RUNNING, CD_STATE_PAUSED, CD_STATE_DONE)
 
-# 描边颜色：默认纯白（v2.9.31 行为），可选 "auto" 自动配色，或任意 #RRGGBB
-# ★ v2.9.32 新增。用户原话：「有些颜色用白色描边就是不怎么好，希望在不同颜色的时候
-#   能使用更适合的描边颜色」——白边在亮色字周围会糊出一圈光晕，在暗色字周围又必须
-#   靠它把字从纯黑里托出来，所以「合适」取决于这一屏字的明暗。
-STROKE_COLOR_DEFAULT = "#FFFFFF"
-STROKE_AUTO = "auto"
-# ── 「自动描边」的判据阈值（全部用 Lab 色差 / 黑底对比度，不用 WCAG 亮度比）──
-# 白边与字色的 ΔE 达到这个值 → 白边本来就分得开，保持白色，不要动
-AUTO_STROKE_DE_WHITE = 40.0
-# 换出来的描边色与字色的 ΔE 至少要这么大，否则等于没描
-AUTO_STROKE_DE_MIN = 30.0
-# 换出来的描边色自己在黑底上的对比度下限（大屏是纯黑底，暗边等于没描边）
-AUTO_STROKE_BLACK_MIN = 3.5
-# ↓ 旧版「整屏一个描边色」用的阈值，算法已被 auto_stroke_for_fill 取代，
-#   这两个函数（auto_stroke_for / auto_stroke_for_v2）只留给探针对比，不参与绘制。
-AUTO_STROKE_DIM_BELOW = 6.0
+# 可选时长（分钟）—— 用户点名 1 / 2 / 3 小时；0 = 不显示倒计时（默认，老用户零感知）
+CD_MINUTES_CHOICES = (0, 60, 120, 180)
+CD_MINUTES_ITEMS = (
+    (0, "关闭倒计时"),
+    (60, "1 小时"),
+    (120, "2 小时"),
+    (180, "3 小时"),
+)
+
+# 倒计时字号的倍数（★ v2.9.45）—— 基准是**标题「今日战绩」的字号**，不是绝对像素。
+# 用户 v2.9.44 反馈：网页版倒计时比标题小一档看着太小，要求「跟今日战绩一样大」。
+# 所以默认 1.0（完全等大）；要小一档填 0.78（v2.9.37~v2.9.44 的旧观感），要大最多 2.0。
+# 用倍数而不是绝对字号：窗口放大、换分辨率时两者一起缩放，比例永远不变
+# —— 与 wall_stroke「按字号比例算描边」是同一套思路。
+CD_FONT_SCALE_DEFAULT = 1.0
+CD_FONT_SCALE_MIN = 0.5
+CD_FONT_SCALE_MAX = 2.0
+
+# 倒计时字色：与标题（#35E1FF 亮青）刻意错开，一眼能分清「这是表盘不是标题」
+CD_COLOR_RUN = "#FFD54A"     # 正常运行：金黄
+CD_COLOR_WARN = "#FF9F43"    # 剩余 < 5 分钟：转橙提醒
+CD_COLOR_DONE = "#FF5252"    # 归零：红（配合闪动）
+CD_WARN_MS = 5 * 60 * 1000   # 5 分钟警戒线
+CD_FLASH_MS = 500            # 归零后闪动周期（亮/灭各半）
+CD_TICK_MS = 250             # 界面刷新节拍：1 秒的显示 + 500ms 的闪动都够用
+
+
+def fmt_countdown(remain_ms: int) -> str:
+    """剩余毫秒 → `HH:MM:SS`（用户指定格式）；负数按 0 算，不出现 -00:00:01"""
+    ms = max(0, int(remain_ms or 0))
+    total = ms // 1000
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    return "%02d:%02d:%02d" % (h, m, s)
+
+
+def countdown_color(remain_ms: int, state: str, blink_on: bool = True) -> str:
+    """倒计时该用哪个颜色
+
+    done 时按 blink_on 在红色与暗红之间跳 —— 这是「闪红」的实现：不靠 Qt 动画，
+    靠 250ms 的刷新节拍换色，投屏上看得见，也不额外占一个 QTimer。
+    分档：inactive 灰（选了时长但没开始）/ paused 橙（停住了，不是坏了）/
+          剩 5 分钟内橙 / 正常金 / 归零闪红。
+    """
+    st = str(state or "")
+    if st == CD_STATE_IDLE:
+        return MUTED                 # 待开始：灰，和「正在走」一眼分开
+    if st == CD_STATE_PAUSED:
+        return CD_COLOR_WARN
+    if st == CD_STATE_DONE or int(remain_ms or 0) <= 0:
+        return CD_COLOR_DONE if blink_on else "#7A1E1E"
+    if int(remain_ms or 0) <= CD_WARN_MS:
+        return CD_COLOR_WARN
+    return CD_COLOR_RUN
+
+
+def countdown_visible(cfg: Optional[Dict]) -> bool:
+    """当前配置下倒计时是否要显示（时长 0 或没设置 = 完全不显示，行为同老版本）"""
+    try:
+        return int((cfg or {}).get("wall_cd_minutes") or 0) > 0
+    except Exception:       # noqa: BLE001
+        return False
+
+
+def resume_countdown(cfg: Optional[Dict], now: Optional[float] = None) -> Dict:
+    """按落盘状态算出「现在」应该是什么状态（关掉看板再打开时用它接上）
+
+    返回 {state, remain_ms, expired}：
+      · running → 剩余 = 落盘剩余 - 真实经过秒数；减到 <=0 就是 done/expired
+      · paused  → 原样（暂停期间时间不该走）
+      · done    → 原样 0
+      · idle    → 时长（若已经选过时长，回到满格待开始）
+    ★ 只在这里做一次「扣时间」，之后由窗口自己的 QTimer 在内存里累减，
+      不读系统时钟，避免每次重绘都算一遍时间差。
+    """
+    c = normalize_config(cfg)
+    total = int(c["wall_cd_minutes"]) * 60 * 1000
+    st = str(c["wall_cd_state"])
+    remain = int(c["wall_cd_remain_ms"])
+    expired = False
+    if not countdown_visible(c):
+        return {"state": CD_STATE_IDLE, "remain_ms": 0, "expired": False}
+    if st == CD_STATE_RUNNING:
+        saved = int(c["wall_cd_saved_at"] or 0)
+        t = float(now if now is not None else time.time())
+        elapsed_ms = int(max(0.0, t - saved) * 1000) if saved > 0 else 0
+        remain = max(0, remain - elapsed_ms)
+        if remain <= 0:
+            remain = 0
+            st = CD_STATE_DONE
+            expired = True
+        else:
+            st = CD_STATE_RUNNING
+    elif st == CD_STATE_PAUSED:
+        # 暂停在 0 上不成立（0 就是 done）→ 至少留 1 秒，这样「继续」一定还能走
+        remain = max(1, min(total, remain))
+        st = CD_STATE_PAUSED
+    elif st == CD_STATE_DONE:
+        st = CD_STATE_DONE
+        remain = 0
+    else:
+        st = CD_STATE_IDLE
+        remain = total          # 选好时长但没开始 → 满格显示，等点「开始」
+    return {"state": st, "remain_ms": remain, "expired": expired}
+
+
+def countdown_next(cfg: Optional[Dict]) -> Dict:
+    """「开始」按钮按下后应该切到什么状态（选好时长才允许开始）
+
+    已归零(done) 再点开始 → 从满格重新来；暂停中点开始 → 接着走。
+    """
+    c = normalize_config(cfg)
+    total = int(c["wall_cd_minutes"]) * 60 * 1000
+    if total <= 0:
+        return {"state": CD_STATE_IDLE, "remain_ms": 0}
+    st = str(c["wall_cd_state"])
+    remain = int(c["wall_cd_remain_ms"])
+    if st == CD_STATE_DONE or remain <= 0:
+        return {"state": CD_STATE_RUNNING, "remain_ms": total}
+    if st == CD_STATE_IDLE:
+        return {"state": CD_STATE_RUNNING, "remain_ms": total}
+    return {"state": CD_STATE_RUNNING, "remain_ms": max(1, remain)}
 
 
 # ── 分档方式（v2.9.33 新增）──
@@ -113,6 +256,12 @@ def default_config() -> Dict:
         "wall_highlight_first": True,  # 第一名整行反色高亮（底色铺满、字改黑）
         "wall_geo": [],            # [x, y, w, h]；[] = 用默认尺寸、由 Qt 摆位
         "wall_maximized": False,   # 上次是否最大化
+        # ---- 倒计时（★ v2.9.37）----
+        "wall_cd_minutes": 0,      # 0=关闭（默认，老用户零感知）/ 60 / 120 / 180
+        "wall_cd_state": CD_STATE_IDLE,   # idle / running / paused / done
+        "wall_cd_remain_ms": 0,    # 剩余毫秒（paused/done 时是定格值）
+        "wall_cd_saved_at": 0,     # 保存时刻（epoch 秒）；running 时用它扣掉真实流逝
+        "wall_cd_font_scale": CD_FONT_SCALE_DEFAULT,  # 字号 = 标题字号 × 本值（1.0=等大）
     }
 
 
@@ -188,6 +337,44 @@ def normalize_config(cfg: Optional[Dict]) -> Dict:
             out["wall_geo"] = [int(geo[0]), int(geo[1]), int(geo[2]), int(geo[3])]
         except Exception:   # noqa: BLE001
             pass
+    # ---- 倒计时（★ v2.9.37）----
+    # 时长只认 0/60/120/180，其它值一律回 0（关）。脏数据不能让看板显示个怪时长。
+    try:
+        mins = int(cfg.get("wall_cd_minutes") or 0)
+    except Exception:       # noqa: BLE001
+        mins = 0
+    out["wall_cd_minutes"] = mins if mins in CD_MINUTES_CHOICES else 0
+    st = str(cfg.get("wall_cd_state") or CD_STATE_IDLE).strip().lower()
+    out["wall_cd_state"] = st if st in CD_STATES else CD_STATE_IDLE
+    # 剩余毫秒：夹在 [0, 时长] 之间。**不能超过总时长**，否则手工改设置文件能造出
+    # 「3 小时的表盘显示 99 小时」；也不能是负的。
+    total_ms = int(out["wall_cd_minutes"]) * 60 * 1000
+    try:
+        remain = int(cfg.get("wall_cd_remain_ms") or 0)
+    except Exception:       # noqa: BLE001
+        remain = 0
+    if total_ms <= 0:
+        out["wall_cd_remain_ms"] = 0
+        if out["wall_cd_state"] != CD_STATE_IDLE:
+            out["wall_cd_state"] = CD_STATE_IDLE
+    else:
+        out["wall_cd_remain_ms"] = max(0, min(total_ms, remain))
+    try:
+        out["wall_cd_saved_at"] = max(0, int(cfg.get("wall_cd_saved_at") or 0))
+    except Exception:       # noqa: BLE001
+        out["wall_cd_saved_at"] = 0
+    # 字号倍数（★ v2.9.45）：夹在 [0.5, 2.0]。脏数据（0、负数、nan、字符串）
+    # 一律回默认 1.0 —— 否则会算出 0 号字，表盘直接看不见了。
+    fsv = cfg.get("wall_cd_font_scale")
+    if fsv is not None:
+        try:
+            f = float(fsv)
+            if f != f:          # nan 不等于自己，单独挡一下
+                raise ValueError("nan")
+            out["wall_cd_font_scale"] = max(CD_FONT_SCALE_MIN,
+                                            min(CD_FONT_SCALE_MAX, f))
+        except Exception:   # noqa: BLE001
+            out["wall_cd_font_scale"] = CD_FONT_SCALE_DEFAULT
     return out
 
 
@@ -231,49 +418,6 @@ except Exception as _exc:                       # noqa: BLE001  pragma: no cover
         return []
 
 
-_HEX_OK = set("0123456789ABCDEFabcdef")
-
-
-def is_hex_color(v) -> bool:
-    """`#RRGGBB` 校验（只认 6 位，短写 #FFF 一律当非法，避免歧义）"""
-    s = str(v or "").strip()
-    if len(s) != 7 or s[0] != "#":
-        return False
-    return all(c in _HEX_OK for c in s[1:])
-
-
-def expand_hex(v) -> Optional[str]:
-    """把用户可能手填的 `#FFF` / `#ffffff` / `ffffff` 规整成 `#FFFFFF`
-
-    不合法返回 None（不猜、不补）。界面允许简写，是因为取色器面板上常有
-    3 位写法，用户在输入框里手打时也会这么打，直接判非法体验很差。
-    """
-    s = str(v or "").strip()
-    if not s:
-        return None
-    if not s.startswith("#"):
-        s = "#" + s
-    if len(s) == 4:
-        s = "#" + s[1] * 2 + s[2] * 2 + s[3] * 2
-    if not is_hex_color(s):
-        return None
-    return s.upper()
-
-
-def normalize_steps(v) -> Optional[Tuple[str, ...]]:
-    """把外部传的 5 个色值规整成大写 hex；不合法返回 None（不猜、不补）"""
-    if not isinstance(v, (list, tuple)) or len(v) != 5:
-        return None
-    out = []
-    for c in v:
-        s = str(c or "").strip()
-        if not s.startswith("#"):
-            s = "#" + s
-        if not is_hex_color(s):
-            return None
-        out.append(s.upper())
-    return tuple(out)
-
 
 def custom_palette_id(name: str) -> str:
     return "custom:" + str(name or "").strip()
@@ -310,321 +454,10 @@ def resolve_palette_name(pid: str, cfg: Optional[Dict] = None) -> str:
     return palette_name_of(pid)
 
 
-# ---------------------------------------------------------------- 颜色计算
-def hex_to_rgb(color: str) -> Optional[Tuple[int, int, int]]:
-    """`#RRGGBB`（也接受 `#FFF` / 无 #）→ (r,g,b)；非法返回 None（不猜）"""
-    s = expand_hex(color)
-    if not s:
-        return None
-    return (int(s[1:3], 16), int(s[3:5], 16), int(s[5:7], 16))
 
-
-def rgb_to_hex(r: float, g: float, b: float) -> str:
-    """(0~255) → `#RRGGBB`（越界自动夹紧，不抛异常）"""
-    def _q(v):
-        return max(0, min(255, int(round(float(v)))))
-    return "#%02X%02X%02X" % (_q(r), _q(g), _q(b))
-
-
-def _luminance(color: str) -> float:
-    """WCAG 相对亮度（0~1）；非法色返回 0.0（等于纯黑，最坏情况）"""
-    rgb = hex_to_rgb(color)
-    if not rgb:
-        return 0.0
-
-    def _lin(c):
-        c = c / 255.0
-        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
-    r, g, b = (_lin(v) for v in rgb)
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
-
-
-def contrast_on_black(color: str) -> float:
-    """该颜色在纯黑底上的对比度（1~21）；大屏是纯黑底，只有这一个背景要算"""
-    return (_luminance(color) + 0.05) / 0.05
-
-
-def _mix(color: str, other: str, t: float) -> str:
-    """把 color 朝 other 混 t（0~1）"""
-    a = hex_to_rgb(color)
-    b = hex_to_rgb(other)
-    if not a or not b:
-        return str(color or STROKE_COLOR_DEFAULT)
-    t = max(0.0, min(1.0, float(t)))
-    return rgb_to_hex(a[0] + (b[0] - a[0]) * t,
-                      a[1] + (b[1] - a[1]) * t,
-                      a[2] + (b[2] - a[2]) * t)
-
-
-def auto_stroke_for(steps, ratio: float = STROKE_DEFAULT) -> str:
-    """按配色算出「更合适的描边色」（wall_stroke_color == "auto" 时用）
-
-    怎么定的（两个方向，都不是拍脑袋，见 _scaffold/_stroke_auto_probe.py 的实测）：
-      ① 整份配色**偏暗**（最暗那档黑底对比度 < AUTO_STROKE_DIM_BELOW）：
-         白边是唯一的救命绳，必须留亮。但不能用纯白 —— 亮色字上纯白边会在
-         深色底上糊出一圈光晕，把笔画吃细。所以取「整份配色的平均色提亮」，
-         保持同一色相家族，白边变成「同色系亮边」，亮字仍透、暗字仍托得住。
-      ② 整份配色**够亮**（暗档也够显眼）：
-         这时白边是纯负担（亮色 + 白边 = 光晕、笔画发胖）。改用「平均色压暗」，
-         描边变成比字色深一档的同色暗边，起到「勾轮廓」的作用，不抢字。
-      ③ 描边太粗时（用户调到 > 0.12）再把结果往中性灰收一点，
-         粗边如果还是高饱和，会像彩虹描边；中性一点更稳。
-      ④ 任何情况下都保证描边与黑底对比度 >= 3.0，否则「描边看不见，
-         等于没描」，宁可变白。
-    """
-    seq = tuple(steps) if steps and len(steps) == 5 else DEFAULT_STEPS
-    # 平均色（5 档等权；大屏上五档都会出现，不能只看榜首）
-    rs = gs = bs = 0.0
-    for c in seq:
-        rgb = hex_to_rgb(c)
-        if not rgb:
-            continue
-        rs += rgb[0]
-        gs += rgb[1]
-        bs += rgb[2]
-    avg = rgb_to_hex(rs / 5.0, gs / 5.0, bs / 5.0)
-    dimmest = min(contrast_on_black(c) for c in seq)
-    if dimmest < AUTO_STROKE_DIM_BELOW:
-        # 偏暗：往亮里提，但别到纯白（0.55 混白 → 同色系亮边）
-        out = _mix(avg, "#FFFFFF", 0.55)
-    else:
-        # 够亮：往暗里压（0.45 混黑 → 同色系暗边），勾轮廓不抢字
-        out = _mix(avg, "#000000", 0.45)
-    if float(ratio) > 0.12:
-        out = _mix(out, "#B9C4CE", 0.35)     # 粗边收一点饱和度，避免彩虹边
-    if contrast_on_black(out) < 3.0:
-        out = "#FFFFFF"                      # 保不住可见度就退回白色
-    return out
-
-
-def auto_stroke_for_v2(steps, ratio: float = STROKE_DEFAULT):
-    """在候选色里打分选优（返回 (颜色, (区分度, 黑底对比度))）"""
-    seq = tuple(steps) if steps and len(steps) == 5 else DEFAULT_STEPS
-    best = None
-    for cand in stroke_candidates(seq):
-        bg = contrast_on_black(cand)
-        if bg < 3.2:
-            continue
-        sep = min(_contrast_pair(f, cand) for f in seq)
-        if best is None or sep > best[1][0]:
-            best = (cand, (sep, bg))
-    if best is None:
-        return STROKE_COLOR_DEFAULT, (0.0, contrast_on_black(STROKE_COLOR_DEFAULT))
-    return best
-
-
-def _contrast_pair(a: str, b: str) -> float:
-    """两色之间的 WCAG 对比度（1~21）"""
-    la, lb = _luminance(a), _luminance(b)
-    hi, lo = max(la, lb), min(la, lb)
-    return (hi + 0.05) / (lo + 0.05)
-
-
-def _hsl_of(color: str):
-    """`#RRGGBB` → (h, s, l)，h/s/l 都是 0~1；非法返回 None"""
-    rgb = hex_to_rgb(color)
-    if not rgb:
-        return None
-    r, g, b = (v / 255.0 for v in rgb)
-    mx, mn = max(r, g, b), min(r, g, b)
-    l = (mx + mn) / 2.0
-    if mx == mn:
-        return (0.0, 0.0, l)
-    d = mx - mn
-    s = d / (2.0 - mx - mn) if l > 0.5 else d / (mx + mn)
-    if mx == r:
-        h = ((g - b) / d) % 6.0
-    elif mx == g:
-        h = (b - r) / d + 2.0
-    else:
-        h = (r - g) / d + 4.0
-    return (h / 6.0, s, l)
-
-
-def _hsl_hex(h: float, s: float, l: float) -> str:
-    """(h,s,l) 都是 0~1 → `#RRGGBB`"""
-    h = float(h) % 1.0
-    s = max(0.0, min(1.0, float(s)))
-    l = max(0.0, min(1.0, float(l)))
-    if s <= 0.0:
-        v = int(round(l * 255))
-        return "#%02X%02X%02X" % (v, v, v)
-    q = l * (1.0 + s) if l < 0.5 else l + s - l * s
-    p = 2.0 * l - q
-
-    def _c(t):
-        t = t % 1.0
-        if t < 1.0 / 6.0:
-            return p + (q - p) * 6.0 * t
-        if t < 0.5:
-            return q
-        if t < 2.0 / 3.0:
-            return p + (q - p) * (2.0 / 3.0 - t) * 6.0
-        return p
-    return "#%02X%02X%02X" % (int(round(_c(h + 1.0 / 3.0) * 255)),
-                              int(round(_c(h) * 255)),
-                              int(round(_c(h - 1.0 / 3.0) * 255)))
-
-
-# 「自动描边」的结果缓存：key = 大写色值，value = 描边色。
-# auto_stroke_for_fill 是纯函数（只看 fill），缓存绝对安全；
-# 不缓存实测一帧 60 段文字要 36ms，等于把 v2.9.31 的性能优化全部白做。
-# 上限取 512：一屏最多 5 档 + 表头/标题/次要字 3 个，240 套配色全换一遍也到不了。
-_AUTO_STROKE_CACHE: Dict[str, str] = {}
-_AUTO_STROKE_CACHE_MAX = 512
-
-
-def auto_stroke_for_fill(fill: str) -> str:
-    """给**某一个字色**算它自己的描边色（按色相派生，不是整份配色一个色）
-
-    为什么按字色而不是整份配色取一个
-        大屏上一屏里五档色都在。若全屏只用一个描边色，必然有某一档与描边
-        太接近（实测 candy 的最后两档接近白，白描边等于没描）。按每个字色
-        各自算，才能保证「每一档都有轮廓」。
-
-    怎么定（针对纯黑底）
-        · 字色本身够亮（黑底对比度 >= 4.5）：描边往**同色相的暗侧**走，
-          起到收边、勾轮廓的作用；但不能暗到融进黑底，黑底对比度保 >= 2.6。
-        · 字色偏暗：描边往**同色相的亮侧**走，把字从黑底里托出来。
-        · 色相保持不变、饱和度略降（0.85），避免出现彩虹感描边。
-        · ★ 硬约束：算出来的色与字色的区分度必须**严格优于白边**，否则退回白色。
-          这条不能省 —— 实测 lava 那套暗红字，自动算出的暗红边区分度只有 2.26，
-          而白边是 5.99，用了自动反而更难认。「自动」的底线是「不比白边差」，
-          不是「换个颜色」。
-        · 找不到满足条件的就退回白色（白边最保险，至少看得见）。
-
-    ★ 结果缓存：本函数只依赖 fill 一个输入，纯函数，缓存绝对安全。
-      不缓存的话实测一帧画 60 段文字要 36ms（每次探测最多 34 轮 × 每轮
-      几次 WCAG 亮度换算），会把「按字色各算」这个正确做法拖成性能灾难。
-      key 用大写色值；配色方案在界面里点点换换也不会超过几百条。
-    """
-    key = str(fill or "").strip().upper()
-    hit = _AUTO_STROKE_CACHE.get(key)
-    if hit is not None:
-        return hit
-    got = _auto_stroke_for_fill_uncached(key)
-    if len(_AUTO_STROKE_CACHE) >= _AUTO_STROKE_CACHE_MAX:
-        _AUTO_STROKE_CACHE.clear()
-    _AUTO_STROKE_CACHE[key] = got
-    return got
-
-
-def _srgb_to_lab(color: str):
-    """#RRGGBB -> CIELAB（D65）。算色差用，算不了返回 None
-
-    为什么要 Lab 而不是直接比 WCAG 对比度
-        WCAG 对比度只吃**亮度**。两个都接近白的颜色（比如 #E8F0F8 与 #FFFFFF）
-        亮度几乎一样，算出来的对比度是 1.15 —— 看着像「分得开」，其实人眼看到
-        的是「同样一坨亮」，白描边糊在字上完全看不出轮廓。
-        Lab 的 ΔE 把色相/彩度也算进去，#E8F0F8 与白的 ΔE 只有 7.4，这才是
-        「白边等于没描」的真实数字。反过来 #FFD54A 与白 ΔE 高达 71.9，白边
-        清清楚楚 —— 旧判据却把它判成「需要换色」，这是全部错误的来源。
-    """
-    rgb = hex_to_rgb(color)
-    if not rgb:
-        return None
-    ch = []
-    for v in rgb:
-        u = v / 255.0
-        ch.append(((u + 0.055) / 1.055) ** 2.4 if u > 0.04045 else u / 12.92)
-    r, g, b = ch
-    x = (r * 0.4124564 + g * 0.3575761 + b * 0.1804375) / 0.95047
-    y = r * 0.2126729 + g * 0.7151522 + b * 0.0721750
-    z = (r * 0.0193339 + g * 0.1191920 + b * 0.9503041) / 1.08883
-    def _f(t: float) -> float:
-        return t ** (1.0 / 3.0) if t > 0.008856 else 7.787 * t + 16.0 / 116.0
-    fx, fy, fz = _f(x), _f(y), _f(z)
-    return (116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz))
-
-
-def _delta_e(a: str, b: str) -> float:
-    """两色的 Lab 色差（CIE76）。算不了返回 0.0"""
-    la = _srgb_to_lab(a)
-    lb = _srgb_to_lab(b)
-    if not la or not lb:
-        return 0.0
-    return sum((x - y) ** 2 for x, y in zip(la, lb)) ** 0.5
-
-
-def _auto_stroke_for_fill_uncached(fill: str) -> str:
-    """真正的算法：**只在白边确实分不开时才换色**，且换出的色必须同色相、黑底可见
-
-    三道门（按顺序，任一不过就退回白色）：
-      ① 白边够不够用：`_delta_e(fill, 白) >= AUTO_STROKE_DE_WHITE` 就保持白色。
-         这是本函数的**主开关**。大多数配色（实测 240 套里 205 套）白边本来就
-         好看，不该被动。只有「近白字」才真正需要自动。
-      ② 换出来的色与字色要分得开：`_delta_e(fill, cand) >= AUTO_STROKE_DE_MIN`。
-      ③ 换出来的色自己要在黑底上看得见：`contrast_on_black(cand) >= AUTO_STROKE_BLACK_MIN`。
-         这条不能省 —— 早期版本漏了它，把亮金字配了暗绿边，远看等于没描边，
-         字反而比白边更细。
-    取色方向：同色相、每次压暗 0.07 明度、最多 15 步（`s*0.95` 保住色相家族）。
-    绝不跨色相（早期试过「最大化 ΔE」，会把 mono 推成紫色、cream 推成红色，
-    大屏上看着像描错了色）。
-    """
-    hsl = _hsl_of(fill)
-    if not hsl:
-        return STROKE_COLOR_DEFAULT
-    h, s, l = hsl
-    # ① 白边本来就分得开 → 白边就是最合适的，不要动
-    if _delta_e(fill, STROKE_COLOR_DEFAULT) >= AUTO_STROKE_DE_WHITE:
-        return STROKE_COLOR_DEFAULT
-    # ②③ 近白字：同色相压暗，直到既分得开又在黑底看得见
-    for step in range(1, 16):
-        nl = l - 0.07 * step
-        if nl < 0.0:
-            break
-        cand = _hsl_hex(h, min(1.0, s * 0.95), nl)
-        if (contrast_on_black(cand) >= AUTO_STROKE_BLACK_MIN
-                and _delta_e(fill, cand) >= AUTO_STROKE_DE_MIN):
-            return cand
-    return STROKE_COLOR_DEFAULT
-
-
-
-def stroke_candidates(steps) -> Tuple[str, ...]:
-    """候选描边色：白 / 黑 / 同色相多档明度×多档饱和度 / 中性灰阶"""
-    seq = tuple(steps) if steps and len(steps) == 5 else DEFAULT_STEPS
-    hs, ss = [], []
-    for c in seq:
-        hsl = _hsl_of(c)
-        if hsl:
-            hs.append(hsl[0])
-            ss.append(hsl[1])
-    out = ["#FFFFFF", "#000000"]
-    if hs:
-        # 色相取圆周平均（红色跨 0/1 时直接算术平均会跑偏，用向量平均）
-        import math
-        ang = [x * 2.0 * math.pi for x in hs]
-        h0 = (math.atan2(sum(math.sin(a) for a in ang),
-                         sum(math.cos(a) for a in ang)) / (2.0 * math.pi)) % 1.0
-        s0 = sum(ss) / len(ss)
-        for li in range(8, 97, 4):
-            for sf in (0.0, 0.3, 0.6, 1.0):
-                out.append(_hsl_hex(h0, s0 * sf, li / 100.0))
-    for li in range(10, 91, 8):
-        out.append(_hsl_hex(0.0, 0.0, li / 100.0))
-    return tuple(dict.fromkeys(out))
-
-
-def stroke_setting(cfg: Optional[Dict]) -> str:
-    """取「描边设置」原值：`"auto"` 或 `#RRGGBB`
-
-    ★ 和 resolve_stroke_color() 的区别：
-      · resolve_stroke_color() 永远给你一个**具体颜色**（界面色块、对比度显示要用它）
-      · stroke_setting() 可能返回 `"auto"` 这个标记 —— 真正的颜色要等知道
-        「这一笔是哪个字色」时才算得出来（见 auto_stroke_for_fill）。
-      绘制链路必须用这个，否则「自动」会退化成整屏一个颜色，
-      而实测整屏一色必然有某一档字与描边撞色（见 _stroke_plan_probe.py）。
-    """
-    c = cfg if isinstance(cfg, dict) else {}
-    raw = str(c.get("wall_stroke_color") or "").strip()
-    if raw.lower() == STROKE_AUTO:
-        return STROKE_AUTO
-    if is_hex_color(raw):
-        return raw.upper()
-    return expand_hex(raw) or STROKE_COLOR_DEFAULT
-
-
+# ---------------------------------------------------------------- 描边颜色解析
+# ★ 留在本文件而不是搬去 mahjong_color_quality.py：它要查「当前配色方案」的色阶
+#   （resolve_steps），而方案查表依赖 palette 模块与用户自定义方案，不属于纯颜色计算。
 def resolve_stroke_color(cfg: Optional[Dict], steps=None) -> str:
     """把 `wall_stroke_color` 解析成一个**具体颜色**（UI 色块 / 对比度提示用）
 
@@ -670,7 +503,6 @@ SCORE_STEPS = (
     (0.00, "#E8F0F8"),   # 灰白   —— 最低
 )
 
-DEFAULT_STEPS = ("#FFD54A", "#FFE97A", "#6BFF9E", "#35E1FF", "#E8F0F8")
 
 # 色阶阈值（与 SCORE_STEPS 的第一列一致，只保留一份，避免两处不同步）
 SCORE_THRESHOLDS = (0.80, 0.55, 0.30, 0.10, 0.00)

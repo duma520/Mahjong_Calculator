@@ -659,6 +659,44 @@ class StatsDB:
             ).fetchall()
         return [r[0] for r in rows]
 
+    def list_months(self) -> List[str]:
+        """去重「年-月」列表（倒序），供一键清除的月份下拉用
+
+        ★ 只列**库里真有数据**的年月：让用户从一堆空白月份里挑，
+          既没意义也容易选错（选到空月份点删除会一无所获，还以为程序坏了）。
+          用 SQL 的 substr 取前 7 位（'YYYY-MM-DD' → 'YYYY-MM'），
+          比在 Python 里 strftime 快，也不用把全部日期读上来。
+        """
+        try:
+            with self._lock:
+                rows = self._conn.execute(
+                    "SELECT DISTINCT substr(day, 1, 7) AS m FROM score_log "
+                    "WHERE day IS NOT NULL AND length(day) >= 7 "
+                    "ORDER BY m DESC").fetchall()
+            return [r[0] for r in rows if r[0]]
+        except Exception as exc:       # noqa: BLE001
+            try:
+                sys.stderr.write("[stats] 读取月份列表失败：%r\n" % (exc,))
+            except Exception:          # noqa: BLE001
+                pass
+            return []
+
+    def list_years(self) -> List[str]:
+        """去重「年」列表（倒序），供一键清除的年份下拉用（同样只列有数据的）"""
+        try:
+            with self._lock:
+                rows = self._conn.execute(
+                    "SELECT DISTINCT substr(day, 1, 4) AS y FROM score_log "
+                    "WHERE day IS NOT NULL AND length(day) >= 4 "
+                    "ORDER BY y DESC").fetchall()
+            return [r[0] for r in rows if r[0]]
+        except Exception as exc:       # noqa: BLE001
+            try:
+                sys.stderr.write("[stats] 读取年份列表失败：%r\n" % (exc,))
+            except Exception:          # noqa: BLE001
+                pass
+            return []
+
     def total_summary(self, day: Optional[str] = None) -> Dict:
         """整体汇总：手数 / 总番数 / 用户数 / ★ v2.9.9 番种榜"""
         sql = ("SELECT COUNT(*) AS hands, COALESCE(SUM(total_fan),0) AS fan, "
@@ -968,6 +1006,119 @@ class StatsDB:
         except Exception as exc:       # noqa: BLE001
             _warn("[stats] 删除 %s 的记录失败：%r" % (d, exc))
             return 0
+
+    # ---- ★ v2.9.37：一键清除（按 今日 / 本月 / 本年 / 指定日·月·年 / 全部 清数据）
+    #
+    # 为什么要它：原来只能「右键日期删一整天」或「删某个人的记录」，清理演示数据、
+    # 清理跑测试留下的脏数据都得一天一天点。这里给一个统一的入口，并且**先预览再删**。
+    #
+    # 设计要点：
+    #  · 只用 day 列的字符串前缀匹配（day 就是 'YYYY-MM-DD'）—— 不解析时间、不依赖
+    #    ts_ms，老库新库都一致；而且 `day >= 'YYYY-MM-01' AND day <= 'YYYY-MM-31'`
+    #    这种写法遇到 2 月也不会错，因为字符串比较本来就按区间算。
+    #  · 全部清空时**连 user_nick 一起清**：记录都没了，昵称表留着只会在下次
+    #    同名上报时莫名变成「老张#2」。
+    #  · 删除**不可恢复**，所以每次都要先 plan_clear() 拿条数给人看。
+    def plan_clear(self, scope: str = "all",
+                   day: Optional[str] = None,
+                   month: Optional[str] = None,
+                   year: Optional[str] = None) -> Dict:
+        """算一遍「一键清除」会删多少条，**只读，不动库**
+
+        scope:
+          'today'  —— 今天（按本机时间的 YYYY-MM-DD）
+          'month'  —— 本月（month='YYYY-MM' 可指定）
+          'year'   —— 本年（year='YYYY' 可指定）
+          'all'    —— 全部记录（含 user_nick）
+          'day' / 'month' / 'year' 由 month/year/day 参数指定具体值
+
+        返回 {ok, scope, label, where, hands, fan, users, days, sql_desc}
+        """
+        info: Dict = {"ok": False, "scope": str(scope or "all"), "label": "",
+                      "where": None, "params": [], "hands": 0, "fan": 0,
+                      "users": 0, "days": 0, "sql_desc": ""}
+        try:
+            sc = str(scope or "all").strip().lower()
+            cond = None
+            params: List = []
+            if sc == "today":
+                d = str(day or time.strftime("%Y-%m-%d"))
+                cond = "day = ?"
+                params = [d]
+                info["label"] = "今天（%s）" % d
+            elif sc == "day":
+                d = str(day or time.strftime("%Y-%m-%d"))
+                cond = "day = ?"
+                params = [d]
+                info["label"] = d
+            elif sc == "month":
+                m = str(month or time.strftime("%Y-%m"))
+                cond = "day >= ? AND day <= ?"
+                params = [m + "-01", m + "-31"]
+                info["label"] = "%s 这一个月" % m
+            elif sc == "year":
+                y = str(year or time.strftime("%Y"))
+                cond = "day >= ? AND day <= ?"
+                params = [y + "-01-01", y + "-12-31"]
+                info["label"] = "%s 这一年" % y
+            else:                      # all
+                sc = "all"
+                info["label"] = "全部记录"
+            info["scope"] = sc
+            info["where"] = cond
+            info["params"] = list(params)
+            info["sql_desc"] = ("day = %s" % params[0]) if (cond and sc in ("today", "day")) else (
+                ("%s ~ %s" % (params[0], params[1])) if cond else "整张表")
+
+            sql = ("SELECT COUNT(*), COALESCE(SUM(total_fan),0), "
+                   "COUNT(DISTINCT user_key), COUNT(DISTINCT day) FROM score_log")
+            if cond:
+                sql += " WHERE " + cond
+            with self._lock:
+                r = self._conn.execute(sql, params).fetchone()
+            info["hands"] = int(r[0] or 0)
+            info["fan"] = int(r[1] or 0)
+            info["users"] = int(r[2] or 0)
+            info["days"] = int(r[3] or 0)
+            info["ok"] = True
+            return info
+        except Exception as exc:       # noqa: BLE001
+            _warn("[stats] 预览清除失败：%r" % (exc,))
+            return info
+
+    def clear_data(self, scope: str = "all",
+                   day: Optional[str] = None,
+                   month: Optional[str] = None,
+                   year: Optional[str] = None) -> int:
+        """★ v2.9.37 一键清除：按 scope 删记录，返回实际删除条数
+
+        scope 与 plan_clear 一致。scope='all' 时**连 user_nick 一起清空**。
+        删不到（本来就没有）返回 0，不算异常。
+        """
+        plan = self.plan_clear(scope, day, month, year)
+        if not plan.get("ok"):
+            return 0
+        cond = plan.get("where")
+        params = list(plan.get("params") or [])
+        n = 0
+        try:
+            with self._lock:
+                if cond:
+                    cur = self._conn.execute(
+                        "DELETE FROM score_log WHERE " + cond, params)
+                else:
+                    cur = self._conn.execute("DELETE FROM score_log")
+                self._conn.commit()
+                n = int(cur.rowcount or 0)
+            if not cond:
+                # 全部清空：昵称表一起清（记录没了，名字留着会串号）
+                with self._lock:
+                    self._conn.execute("DELETE FROM user_nick")
+                    self._conn.commit()
+            return n
+        except Exception as exc:       # noqa: BLE001
+            _warn("[stats] 一键清除失败：%r" % (exc,))
+            return n
 
     # ---- ★ v2.9.26：历史重复清理（老记录没有 sig，只能按时间窗归组）
     def dedupe_plan(self, window_sec: int = DEDUPE_DEFAULT_WINDOW_SEC
