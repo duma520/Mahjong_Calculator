@@ -3492,10 +3492,20 @@ v2.9.37 加倒计时那会儿，需求原话是「显示在『今日战绩』**�
 | 8 | 顺序回归 | `_scaffold/_v47_order_check.py` | **27 项 0 失败** |
 | 9 | 受影响回归 | `_v42_webui_check.py` / `_v35_wall_web_check.py` | 56 / 48 全通过 |
 
-#### 这版没做的
+#### 编译与发布（v2.9.48 已执行）
 
-- **没有重新编译 exe** —— `mahjong_api.py` / `mahjong_wall.py` / `mahjong_wall_web.py` 都改了，`build_output/` 里那个还是 v2.9.41。要新 exe 需要重新跑 Nuitka。
-- **GitHub 仍未发布**（未授权，且项目与本机都不是 git 仓库）。
+| # | 项目 | 实测 |
+|---|-----|-----|
+| 1 | Nuitka 编译 | **exit 0**，约 6 分钟（`4.0.7` / Python `3.10.11`） |
+| 2 | 产物 | `build_output\Mahjong_Calculator\`，**473 文件 / 84.6 MB**，exe **13,612,544 B** |
+| 3 | 编译态 `--version` | `"version": "2.9.48"`、fans 81、tiles 34 |
+| 4 | 编译态算番 | 21 番（清龙16/平和2/门前清2/单钓将1）带 `dropped`/`explain` |
+| 5 | 编译态 GUI | 后台起 exe 能正常驻留，`taskkill` 后无残留 |
+| 6 | 产物验收 | `_scaffold/_v41_exe_verify.py` **34 项 0 失败** |
+| 7 | 源码推送 | GitHub `duma520/Mahjong_Calculator` 已更新到 v2.9.48（450 个文件） |
+| 8 | Release | `v2.9.48` + 便携包 `Mahjong_Calculator-v2.9.48-win64-portable.7z`（28.7 MB，解压 493 文件 / 88 MB） |
+
+**编译前修掉的一处文案不一致**：`mahjong_wall_config.py` 的倒计时说明还写着 v2.9.37 的「显示在看板标题『今日战绩』的右边」，而本版已改成三段顺序。这段文字会被打进 exe，所以改完**重编了一次**。
 
 # 第十二部分 · 术语表与索引
 

@@ -1,5 +1,5 @@
 ================================================================================
-国标麻将算番器 v2.9.35  ·  三步安装与快速上手
+国标麻将算番器 v2.9.48  ·  三步安装与快速上手
 Mahjong_Calculator  ·  https://github.com/duma520/Mahjong_Calculator
 ================================================================================
 
@@ -18,7 +18,7 @@ Mahjong_Calculator  ·  https://github.com/duma520/Mahjong_Calculator
 第 1 步：下载
   打开 https://github.com/duma520/Mahjong_Calculator/releases/latest
   下载其中一个：
-    · Mahjong_Calculator-v2.9.35-win64-便携版.7z    ← 推荐，解压即用，不写注册表
+    · Mahjong_Calculator-v2.9.48-win64-portable.7z    ← 推荐，解压即用，不写注册表
     · 或自己用源码跑（见下面「四、从源码运行」）
 
 第 2 步：解压
